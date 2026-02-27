@@ -331,7 +331,7 @@ async def list_skills():
                 "title": first_line or skill_name,
                 "version": version,
                 "assigned_to": skill_agents.get(skill_name, []),
-                "file": fname,
+                "file": f"skills/{fname}",
             })
 
         return {"skills": skills}

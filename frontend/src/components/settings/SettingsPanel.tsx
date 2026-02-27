@@ -12,14 +12,6 @@ const API_URL =
 
 type Tab = "system" | "prompts" | "controls";
 
-type ServiceStatus = {
-  hasApiKey: boolean;
-  hasSupabase: boolean;
-  hasOpenAIKey: boolean;
-  workingDir: string;
-  backendUrl: string;
-};
-
 type RegistrySettings = {
   self_edit_enabled: boolean;
   concurrency_cap: number;
@@ -177,7 +169,6 @@ function SystemTab() {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState(false);
-  const [status, setStatus] = useState<ServiceStatus | null>(null);
 
   useEffect(() => {
     // Load env vars from backend
@@ -191,12 +182,7 @@ function SystemTab() {
       })
       .catch(() => {});
 
-    // Load working dir + backend health
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => setStatus(null));
-
+    // Load backend health
     fetch("/api/health")
       .then((r) => r.json())
       .then((d) => setBackendOk(d.backend?.status === "ok"))
@@ -379,39 +365,6 @@ function SystemTab() {
         <div className="flex items-center justify-between p-3 bg-bg-tertiary rounded-[2px] border border-border">
           <span className="text-sm text-text-primary">Server</span>
           <StatusDot ok={backendOk} />
-        </div>
-      </div>
-
-      {/* Working Directory */}
-      <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
-          Working Directory
-        </h3>
-        <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
-          <p className="text-sm text-text-primary font-mono break-all">
-            {status?.workingDir || "Not configured"}
-          </p>
-        </div>
-      </div>
-
-      {/* System Info */}
-      <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
-          System
-        </h3>
-        <div className="space-y-2 text-[11px] text-text-secondary">
-          <p>
-            Clyde Model:{" "}
-            <span className="text-accent-primary font-mono">
-              claude-opus-4-6
-            </span>
-          </p>
-          <p>
-            Phase:{" "}
-            <span className="text-text-primary">
-              6 — Proactive Mode
-            </span>
-          </p>
         </div>
       </div>
 

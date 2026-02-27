@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Settings, Heart } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 
 const API_URL =
@@ -53,28 +54,24 @@ export function TopBar() {
 
         <button
           onClick={toggleSettings}
-          className="w-8 h-8 flex items-center justify-center border-2 border-border hover:border-accent-primary transition-colors rounded-[2px]"
+          className="w-8 h-8 flex items-center justify-center border-2 border-border hover:border-accent-primary transition-colors rounded-[2px] text-text-secondary hover:text-accent-primary"
           aria-label="Settings"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            className="text-text-secondary hover:text-accent-primary"
-          >
-            <path
-              d="M8 10a2 2 0 100-4 2 2 0 000 4z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M13.5 8a5.5 5.5 0 01-.3 1.8l1.4 1.1-1 1.7-1.7-.5a5.5 5.5 0 01-1.5.9L10 14.7H8l-.4-1.7a5.5 5.5 0 01-1.5-.9l-1.7.5-1-1.7 1.4-1.1A5.5 5.5 0 014.5 8c0-.6.1-1.2.3-1.8L3.4 5.1l1-1.7 1.7.5a5.5 5.5 0 011.5-.9L8 1.3h2l.4 1.7a5.5 5.5 0 011.5.9l1.7-.5 1 1.7-1.4 1.1c.2.6.3 1.2.3 1.8z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-          </svg>
+          <Settings size={16} />
         </button>
+
+        <a
+          href="https://www.patreon.com/cw/ProjectClyde"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-8 flex items-center gap-1.5 px-2.5 border-2 border-border hover:border-accent-primary transition-colors rounded-[2px] text-text-secondary hover:text-accent-primary"
+          aria-label="Show Support"
+        >
+          <Heart size={14} />
+          <span className="text-[10px] font-semibold uppercase tracking-wider">
+            Show Support
+          </span>
+        </a>
       </div>
     </header>
   );
