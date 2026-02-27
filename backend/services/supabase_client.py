@@ -295,7 +295,7 @@ async def get_prompt_version(version_id: str) -> dict | None:
 # --- Cost Tracking (Phase 4B) ---
 
 
-async def get_cost_summary(usd_to_gbp_rate: float = 0.79) -> dict:
+async def get_cost_summary() -> dict:
     """Get cost aggregates: today, this week, this month, per-agent, daily breakdown."""
     client = get_supabase()
     now = datetime.now(timezone.utc)
@@ -356,7 +356,6 @@ async def get_cost_summary(usd_to_gbp_rate: float = 0.79) -> dict:
     by_agent = [
         {
             "name": name,
-            "cost_gbp": round(data["cost_usd"] * usd_to_gbp_rate, 4),
             "cost_usd": round(data["cost_usd"], 4),
             "message_count": data["message_count"],
         }
@@ -373,18 +372,13 @@ async def get_cost_summary(usd_to_gbp_rate: float = 0.79) -> dict:
         cost_usd = daily_costs.get(date_key, 0.0)
         daily_breakdown.append({
             "date": date_key,
-            "cost_gbp": round(cost_usd * usd_to_gbp_rate, 4),
             "cost_usd": round(cost_usd, 4),
         })
 
     return {
-        "today_gbp": round(today_usd * usd_to_gbp_rate, 4),
-        "week_gbp": round(week_usd * usd_to_gbp_rate, 4),
-        "month_gbp": round(month_usd * usd_to_gbp_rate, 4),
         "today_usd": round(today_usd, 4),
         "week_usd": round(week_usd, 4),
         "month_usd": round(month_usd, 4),
-        "exchange_rate": usd_to_gbp_rate,
         "by_agent": by_agent,
         "daily_breakdown": daily_breakdown,
     }

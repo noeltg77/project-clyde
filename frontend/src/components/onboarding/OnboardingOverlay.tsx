@@ -54,7 +54,7 @@ const steps = [
   {
     title: "Key Features",
     description:
-      "Memory that persists between sessions. Skills that agents learn and reuse. Scheduled tasks and file triggers. Cost tracking in GBP. And a self-improvement loop that makes the team better over time.",
+      "Memory that persists between sessions. Skills that agents learn and reuse. Scheduled tasks and file triggers. Cost tracking in USD. And a self-improvement loop that makes the team better over time.",
     icon: (
       <svg
         width="40"

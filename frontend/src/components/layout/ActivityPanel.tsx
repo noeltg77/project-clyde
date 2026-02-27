@@ -2,7 +2,6 @@
 
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
-import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
 import { ModelBadge } from "@/components/agents/ModelBadge";
 
@@ -13,14 +12,11 @@ export function ActivityPanel() {
 
   const agents = useAgentStore((s) => s.agents);
   const activeAgentIds = useAgentStore((s) => s.activeAgentIds);
-  const usdToGbpRate = useSettingsStore((s) => s.usdToGbpRate);
-
-  // Calculate session cost from messages (convert to GBP)
+  // Calculate session cost from messages
   const sessionCostUsd = messages.reduce(
     (total, msg) => total + (msg.costUsd || 0),
     0
   );
-  const sessionCostGbp = sessionCostUsd * usdToGbpRate;
 
   return (
     <aside className="w-72 bg-bg-secondary border-l-2 border-border flex flex-col">
@@ -148,7 +144,7 @@ export function ActivityPanel() {
             Session
           </span>
           <span className="text-sm font-mono text-accent-primary">
-            £{sessionCostGbp.toFixed(4)}
+            ${sessionCostUsd.toFixed(4)}
           </span>
         </div>
       </div>

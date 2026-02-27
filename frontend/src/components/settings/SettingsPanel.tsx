@@ -24,7 +24,7 @@ type RegistrySettings = {
   self_edit_enabled: boolean;
   concurrency_cap: number;
   max_team_size: number;
-  cost_alert_threshold_gbp: number;
+  cost_alert_threshold_usd: number;
   proactive_mode_enabled: boolean;
   proactive_interval_hours: number;
   save_uploads_enabled: boolean;
@@ -866,18 +866,18 @@ function ControlsTab() {
         </h3>
         <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
           <label className="text-sm text-text-primary block mb-2">
-            Daily spend alert (£)
+            Daily spend alert ($)
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-text-secondary">£</span>
+            <span className="text-sm text-text-secondary">$</span>
             <input
               type="number"
               min={0}
               step={5}
-              value={settings.cost_alert_threshold_gbp || ""}
+              value={settings.cost_alert_threshold_usd || ""}
               onChange={(e) =>
                 updateSetting(
-                  "cost_alert_threshold_gbp",
+                  "cost_alert_threshold_usd",
                   parseFloat(e.target.value) || 0
                 )
               }

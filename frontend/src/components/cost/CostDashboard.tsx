@@ -15,19 +15,16 @@ const API_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 type CostData = {
-  today_gbp: number;
-  week_gbp: number;
-  month_gbp: number;
-  exchange_rate: number;
+  today_usd: number;
+  week_usd: number;
+  month_usd: number;
   by_agent: {
     name: string;
-    cost_gbp: number;
     cost_usd: number;
     message_count: number;
   }[];
   daily_breakdown: {
     date: string;
-    cost_gbp: number;
     cost_usd: number;
   }[];
 };
@@ -89,7 +86,7 @@ export function CostDashboard() {
         day: "numeric",
         month: "short",
       }),
-      cost: d.cost_gbp,
+      cost: d.cost_usd,
     };
   });
 
@@ -108,9 +105,9 @@ export function CostDashboard() {
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-4">
-            <CostCard label="Today" value={data.today_gbp} />
-            <CostCard label="This Week" value={data.week_gbp} />
-            <CostCard label="This Month" value={data.month_gbp} />
+            <CostCard label="Today" value={data.today_usd} />
+            <CostCard label="This Week" value={data.week_usd} />
+            <CostCard label="This Month" value={data.month_usd} />
           </div>
 
           {/* Daily chart */}
@@ -136,7 +133,7 @@ export function CostDashboard() {
                     tick={{ fontSize: 11, fill: "rgba(255,255,255,0.3)" }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `£${v}`}
+                    tickFormatter={(v) => `$${v}`}
                     width={50}
                   />
                   <Tooltip
@@ -148,7 +145,7 @@ export function CostDashboard() {
                       color: "#C8FF00",
                     }}
                     formatter={(value?: number) => [
-                      `£${(value ?? 0).toFixed(4)}`,
+                      `$${(value ?? 0).toFixed(4)}`,
                       "Cost",
                     ]}
                     labelStyle={{ color: "rgba(255,255,255,0.5)" }}
@@ -207,11 +204,11 @@ export function CostDashboard() {
                           {agent.message_count}
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-accent-primary text-right">
-                          £{agent.cost_gbp.toFixed(4)}
+                          ${agent.cost_usd.toFixed(4)}
                         </td>
                         <td className="px-4 py-3 text-[11px] text-text-secondary/40 text-right font-mono">
                           {agent.message_count > 0
-                            ? `£${(agent.cost_gbp / agent.message_count).toFixed(4)}`
+                            ? `$${(agent.cost_usd / agent.message_count).toFixed(4)}`
                             : "—"}
                         </td>
                       </tr>
@@ -222,9 +219,9 @@ export function CostDashboard() {
             )}
           </div>
 
-          {/* Exchange rate footer */}
+          {/* Currency footer */}
           <p className="text-[10px] text-text-secondary/30 text-center">
-            Rate: 1 USD = {data.exchange_rate} GBP
+            All costs in USD
           </p>
         </div>
       </div>
@@ -239,7 +236,7 @@ function CostCard({ label, value }: { label: string; value: number }) {
         {label}
       </p>
       <p className="text-2xl font-mono font-bold text-accent-primary mt-1">
-        £{value.toFixed(2)}
+        ${value.toFixed(2)}
       </p>
     </div>
   );

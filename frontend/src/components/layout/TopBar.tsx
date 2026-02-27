@@ -16,8 +16,8 @@ export function TopBar() {
       try {
         const res = await fetch(`${API_URL}/api/cost`);
         const data = await res.json();
-        if (typeof data.today_gbp === "number") {
-          setTodayCost(data.today_gbp);
+        if (typeof data.today_usd === "number") {
+          setTodayCost(data.today_usd);
         }
       } catch {
         // Silently fail — cost display is non-critical
@@ -44,7 +44,7 @@ export function TopBar() {
         {/* Live cost display */}
         {todayCost !== null && (
           <span className="text-sm font-mono text-accent-primary">
-            £{todayCost.toFixed(2)}{" "}
+            ${todayCost.toFixed(2)}{" "}
             <span className="text-[10px] text-text-secondary/60 uppercase tracking-wider">
               today
             </span>

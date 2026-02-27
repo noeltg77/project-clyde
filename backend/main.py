@@ -71,8 +71,7 @@ def _safe_resolve(relative_path: str) -> Path:
     return target
 
 
-# Phase 4B: Exchange rate for USD → GBP conversion
-USD_TO_GBP_RATE = float(os.environ.get("USD_TO_GBP_RATE", "0.79"))
+# Phase 4B: Cost tracking (USD)
 
 # Phase 4C/4D: Scheduler and file watcher instances
 _scheduler: TaskScheduler | None = None
@@ -348,11 +347,11 @@ async def list_skills():
 async def get_cost():
     """Get cost aggregates: today, week, month, per-agent, daily breakdown."""
     try:
-        summary = await get_cost_summary(usd_to_gbp_rate=USD_TO_GBP_RATE)
+        summary = await get_cost_summary()
         return summary
     except Exception as e:
         logger.error(f"[API] Cost query failed: {e}")
-        return {"error": str(e), "today_gbp": 0, "week_gbp": 0, "month_gbp": 0}
+        return {"error": str(e), "today_usd": 0, "week_usd": 0, "month_usd": 0}
 
 
 # --- Schedules (Phase 4C) ---
@@ -841,7 +840,7 @@ async def get_registry_settings():
             "self_edit_enabled": orchestrator.get("self_edit_enabled", True),
             "concurrency_cap": registry.get("concurrency_cap", 5),
             "max_team_size": registry.get("max_team_size", 3),
-            "cost_alert_threshold_gbp": registry.get("cost_alert_threshold_gbp", 0),
+            "cost_alert_threshold_usd": registry.get("cost_alert_threshold_usd", 0),
             "proactive_mode_enabled": registry.get("proactive_mode_enabled", True),
             "proactive_interval_hours": registry.get("proactive_interval_hours", 6),
             "save_uploads_enabled": registry.get("save_uploads_enabled", True),
@@ -868,9 +867,9 @@ async def update_registry_settings(body: dict):
         if "max_team_size" in body:
             size = int(body["max_team_size"])
             registry["max_team_size"] = max(1, min(5, size))
-        if "cost_alert_threshold_gbp" in body:
-            registry["cost_alert_threshold_gbp"] = float(
-                body["cost_alert_threshold_gbp"]
+        if "cost_alert_threshold_usd" in body:
+            registry["cost_alert_threshold_usd"] = float(
+                body["cost_alert_threshold_usd"]
             )
         if "proactive_mode_enabled" in body:
             registry["proactive_mode_enabled"] = bool(body["proactive_mode_enabled"])

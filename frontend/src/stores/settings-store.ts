@@ -8,7 +8,6 @@ export type SettingsState = {
   isSettingsOpen: boolean;
   isSearchOpen: boolean;
   activeView: ActiveView;
-  usdToGbpRate: number;
 };
 
 export type SettingsActions = {
@@ -30,7 +29,6 @@ export const createSettingsStore = (initState?: Partial<SettingsState>) =>
     isSettingsOpen: false,
     isSearchOpen: false,
     activeView: "chat" as ActiveView,
-    usdToGbpRate: 0.79,
     ...initState,
     setWorkingDir: (dir) => set({ workingDir: dir }),
     setBackendUrl: (url) => set({ backendUrl: url }),
