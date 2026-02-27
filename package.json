@@ -1,0 +1,9 @@
+{
+  "name": "project-clyde",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && bash run.sh",
+    "lint": "cd frontend && npm run lint"
+  }
+}

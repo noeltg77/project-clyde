@@ -1,0 +1,67 @@
+@import "tailwindcss";
+@import "../styles/hljs-brutalist.css";
+
+/* ============================================
+   DESIGN TOKENS: Dark Brutalist Theme
+   ============================================ */
+
+@theme inline {
+  /* Colours */
+  --color-bg-primary: #0A0A0A;
+  --color-bg-secondary: #1A1A1A;
+  --color-bg-tertiary: #2A2A2A;
+  --color-text-primary: #F5F5F0;
+  --color-text-secondary: #A0A090;
+  --color-accent-primary: #C8FF00;
+  --color-accent-secondary: #FF6B35;
+  --color-accent-tertiary: #00D4AA;
+  --color-border: #333333;
+  --color-error: #FF3B30;
+  --color-agent-opus: #C8FF00;
+  --color-agent-sonnet: #00D4AA;
+  --color-agent-haiku: #A0A090;
+
+  /* Fonts */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+@layer base {
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg-primary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #444444;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: var(--color-accent-primary);
+    color: #000000;
+  }
+}

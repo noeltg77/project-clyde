@@ -1,0 +1,34 @@
+# Environment
+.env.local
+.env.*.local
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+.next/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Working directory (contains runtime data)
+working/agents/
+working/logs/
+working/output/
+working/uploads/
+working/shared/
+working/memory/*.md
+!working/memory/.gitkeep

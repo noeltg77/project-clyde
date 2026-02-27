@@ -1,0 +1,164 @@
+/* ============================================
+   highlight.js — Brutalist Dark Theme
+   Matches Project Clyde design system:
+   BG: #0A0A0A / #1A1A1A / #2A2A2A
+   Accent: #C8FF00 (acid green)
+   Secondary: #00D4AA (teal) / #FF6B35 (orange)
+   Text: #F5F5F0 / #A0A090
+   ============================================ */
+
+.hljs {
+  color: #F5F5F0;
+  background: #2A2A2A;
+}
+
+/* ── Comments ─────────────────────────────── */
+.hljs-comment,
+.hljs-quote {
+  color: #6A6A5A;
+  font-style: italic;
+}
+
+/* ── Keywords / Control flow ──────────────── */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type {
+  color: #C8FF00;
+}
+
+/* ── Strings ──────────────────────────────── */
+.hljs-string,
+.hljs-template-variable,
+.hljs-addition {
+  color: #00D4AA;
+}
+
+/* ── Numbers / Literals ───────────────────── */
+.hljs-number,
+.hljs-literal,
+.hljs-built_in {
+  color: #FF6B35;
+}
+
+/* ── Function / Method names ──────────────── */
+.hljs-title,
+.hljs-title\.function,
+.hljs-section {
+  color: #F5F5F0;
+  font-weight: 600;
+}
+
+/* ── Class names / Types ──────────────────── */
+.hljs-title\.class,
+.hljs-title\.class\.inherited {
+  color: #C8FF00;
+}
+
+/* ── Variables / Params ───────────────────── */
+.hljs-variable,
+.hljs-params {
+  color: #D4D4C8;
+}
+
+/* ── Attributes (HTML/JSX) ────────────────── */
+.hljs-attr,
+.hljs-attribute {
+  color: #C8FF00;
+}
+
+/* ── Tags (HTML) ──────────────────────────── */
+.hljs-tag {
+  color: #A0A090;
+}
+
+.hljs-name {
+  color: #FF6B35;
+}
+
+/* ── Symbols / Constants ──────────────────── */
+.hljs-symbol,
+.hljs-bullet {
+  color: #FF6B35;
+}
+
+/* ── Meta / Decorators / Preprocessor ─────── */
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+  color: #A0A090;
+}
+
+.hljs-meta .hljs-string {
+  color: #00D4AA;
+}
+
+/* ── Regex ─────────────────────────────────── */
+.hljs-regexp {
+  color: #FF6B35;
+}
+
+/* ── Deletion (diff) ──────────────────────── */
+.hljs-deletion {
+  color: #FF3B30;
+  background: rgba(255, 59, 48, 0.1);
+}
+
+/* ── Addition (diff) ──────────────────────── */
+.hljs-addition {
+  color: #00D4AA;
+  background: rgba(0, 212, 170, 0.1);
+}
+
+/* ── Emphasis / Strong ────────────────────── */
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* ── Selector (CSS) ───────────────────────── */
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #C8FF00;
+}
+
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #00D4AA;
+}
+
+/* ── Property (CSS) ───────────────────────── */
+.hljs-property {
+  color: #D4D4C8;
+}
+
+/* ── Punctuation ──────────────────────────── */
+.hljs-punctuation {
+  color: #6A6A5A;
+}
+
+/* ── Subst / Template literals ────────────── */
+.hljs-subst {
+  color: #F5F5F0;
+}
+
+/* ── Operator ─────────────────────────────── */
+.hljs-operator {
+  color: #C8FF00;
+}
+
+/* ── Link (inside markdown code) ──────────── */
+.hljs-link {
+  color: #00D4AA;
+  text-decoration: underline;
+}
+
+/* ── Line numbers (if enabled) ────────────── */
+.hljs-ln-numbers {
+  color: #4A4A3A;
+  border-right: 1px solid #333333;
+  padding-right: 0.75em;
+  margin-right: 0.75em;
+  user-select: none;
+}
