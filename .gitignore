@@ -25,10 +25,10 @@ Thumbs.db
 .claude/settings.local.json
 
 # Working directory (contains runtime data)
-working/agents/
-working/logs/
-working/output/
-working/uploads/
-working/shared/
+working/agents/*
+working/logs/*
+working/output/*
+working/uploads/*
+working/shared/*
 working/memory/*.md
-!working/memory/.gitkeep
+!working/*/.gitkeep
