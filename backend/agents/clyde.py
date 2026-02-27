@@ -80,6 +80,9 @@ class ClydeChatManager:
         # Steps accumulated during the current response (tool_use, agent activity)
         self._response_steps: list[dict[str, Any]] = []
 
+        # Running session cost from the SDK (cumulative); used to derive per-message cost.
+        self._prev_session_cost: float = 0.0
+
         # Prompt caching: volatile context (timestamp + context summary) is held
         # here and prepended to the first user message instead of being baked
         # into the system prompt, keeping the system prompt cache-friendly.
@@ -725,11 +728,14 @@ class ClydeChatManager:
 
             elif isinstance(message, ResultMessage):
                 self.session_id = getattr(message, "session_id", None)
+                session_total = getattr(message, "total_cost_usd", 0) or 0
+                incremental_cost = max(session_total - self._prev_session_cost, 0)
+                self._prev_session_cost = session_total
                 yield {
                     "type": "result",
                     "data": {
                         "session_id": self.session_id,
-                        "total_cost_usd": getattr(message, "total_cost_usd", 0),
+                        "total_cost_usd": incremental_cost,
                         "duration_ms": getattr(message, "duration_ms", 0),
                         "num_turns": getattr(message, "num_turns", 0),
                         "is_error": getattr(message, "is_error", False),

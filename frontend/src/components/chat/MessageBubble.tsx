@@ -241,11 +241,6 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
           <div className="flex items-center justify-between mt-2">
             <p className="text-[11px] text-text-secondary">{timestamp}</p>
             <div className="flex items-center gap-2">
-              {message.costUsd !== undefined && message.costUsd > 0 && (
-                <p className="text-[11px] text-text-secondary font-mono">
-                  ${message.costUsd.toFixed(4)}
-                </p>
-              )}
               {!message.isStreaming && (
                 <FeedbackThumbs
                   sessionId={message.sessionId}
