@@ -28,8 +28,10 @@ from services.supabase_client import (
     save_message,
     get_session_messages,
     get_sessions,
+    get_session,
     delete_session,
     update_session_title,
+    update_session_sdk_id,
     search_messages,
     save_activity_event,
     get_activity_events,
@@ -1559,18 +1561,36 @@ async def chat_websocket(ws: WebSocket):
     try:
         # Determine session: resume existing or defer creation until first message
         prior_messages: list[dict] = []
+        stored_sdk_session_id: str | None = None
         if resume_session_id:
             session_id = resume_session_id
             logger.info(f"[WS] Resuming session: {session_id}")
             prior_messages = await get_session_messages(session_id)
             is_first_user_message = len(prior_messages) == 0
+            # Load the SDK session ID for native CLI resumption
+            session_record = await get_session(session_id)
+            if session_record:
+                stored_sdk_session_id = (
+                    (session_record.get("metadata") or {}).get("sdk_session_id")
+                )
+                if stored_sdk_session_id:
+                    logger.info(
+                        f"[WS] Found SDK session ID: {stored_sdk_session_id} "
+                        "— will resume CLI session natively"
+                    )
         else:
             # Defer session creation — don't persist until the user sends a message
             session_id = None
             logger.info("[WS] New chat — session creation deferred until first message")
 
-        # Initialize the Agent SDK client (with context summary if resuming)
-        await manager.initialize(prior_messages=prior_messages)
+        # Initialize the Agent SDK client.
+        # If we have an SDK session ID, the CLI resumes its persisted session
+        # (with built-in auto-compaction). Otherwise, fall back to manual
+        # context summary from prior_messages.
+        await manager.initialize(
+            prior_messages=prior_messages if not stored_sdk_session_id else None,
+            sdk_session_id=stored_sdk_session_id,
+        )
 
         # Notify frontend of session (session_id is null for deferred new chats)
         await ws.send_json({"type": "init", "data": {"session_id": session_id}})
@@ -1771,8 +1791,20 @@ async def chat_websocket(ws: WebSocket):
 
                 async def _stream_response():
                     nonlocal full_response, result_data
+                    ws_dead = False
                     async for chunk in manager.send_message(agent_content):
-                        await ws.send_json(chunk)
+                        if not ws_dead:
+                            try:
+                                await ws.send_json(chunk)
+                            except Exception:
+                                # Client disconnected mid-stream. Keep consuming
+                                # the SDK iterator so we can still save the full
+                                # response and result data.
+                                ws_dead = True
+                                logger.warning(
+                                    "[WS] Client disconnected during streaming "
+                                    "— continuing to drain SDK response for persistence"
+                                )
 
                         # Accumulate all final text blocks for storage
                         if (
@@ -1787,7 +1819,11 @@ async def chat_websocket(ws: WebSocket):
                         if chunk["type"] == "result":
                             result_data = chunk["data"]
 
+                    if ws_dead:
+                        raise WebSocketDisconnect()
+
                 response_task = asyncio.create_task(_stream_response())
+                ws_disconnected = False
 
                 try:
                     await response_task
@@ -1799,8 +1835,52 @@ async def chat_websocket(ws: WebSocket):
                         await manager.abort()
                     except Exception as e:
                         logger.error(f"[WS] Error during abort: {e}")
+                except WebSocketDisconnect:
+                    ws_disconnected = True
+                    logger.info(
+                        "[WS] Client disconnected during response — "
+                        "saving partial response and exiting"
+                    )
                 except Exception as e:
-                    logger.error(f"[WS] Error during streaming: {e}")
+                    error_str = str(e).lower()
+                    is_prompt_too_long = (
+                        "prompt is too long" in error_str
+                        or "prompt_too_long" in error_str
+                        or "context_length_exceeded" in error_str
+                    )
+                    if is_prompt_too_long and session_id:
+                        logger.warning(
+                            "[WS] Prompt too long — attempting context roll and retry"
+                        )
+                        try:
+                            roll_messages = await get_session_messages(session_id)
+                            await manager.context_roll(prior_messages=roll_messages)
+                            # Retry the same user message with the rolled context
+                            full_response = ""
+                            result_data = {}
+                            response_task = asyncio.create_task(_stream_response())
+                            retry_incoming = asyncio.create_task(
+                                _process_incoming_during_response()
+                            )
+                            try:
+                                await response_task
+                            except Exception as retry_err:
+                                logger.error(
+                                    f"[WS] Retry after context roll also failed: {retry_err}"
+                                )
+                            finally:
+                                response_task = None
+                                retry_incoming.cancel()
+                                try:
+                                    await retry_incoming
+                                except asyncio.CancelledError:
+                                    pass
+                        except Exception as roll_err:
+                            logger.error(
+                                f"[WS] Context roll during recovery failed: {roll_err}"
+                            )
+                    else:
+                        logger.error(f"[WS] Error during streaming: {e}")
                 finally:
                     response_task = None
                     # Stop the incoming processor once response is done
@@ -1811,7 +1891,8 @@ async def chat_websocket(ws: WebSocket):
                         pass
 
                 # Process any remaining queued messages
-                await _drain_incoming()
+                if not ws_disconnected:
+                    await _drain_incoming()
 
                 if was_cancelled:
                     # Re-initialize the manager so it's ready for the next message
@@ -1916,13 +1997,30 @@ async def chat_websocket(ws: WebSocket):
                     except Exception as e:
                         logger.warning(f"[WS] Upload cleanup check failed: {e}")
 
+                async def _store_sdk_session_id():
+                    """Persist the CLI's session ID so future reconnects can
+                    resume natively instead of building a manual context summary."""
+                    sdk_sid = manager._sdk_session_id
+                    if sdk_sid and session_id:
+                        try:
+                            await update_session_sdk_id(session_id, sdk_sid)
+                        except Exception as e:
+                            logger.warning(f"[WS] Failed to store SDK session ID: {e}")
+
                 async def _post_response_work():
                     await asyncio.gather(
                         _save_clyde_response(),
                         _log_performance(),
                         _cleanup_uploads(),
+                        _store_sdk_session_id(),
                         return_exceptions=True,
                     )
+
+                if ws_disconnected:
+                    # Client gone — await the save so it completes before
+                    # the handler exits and the manager is torn down.
+                    await _post_response_work()
+                    break
 
                 asyncio.create_task(_post_response_work())
 

@@ -83,6 +83,10 @@ class ClydeChatManager:
         # Running session cost from the SDK (cumulative); used to derive per-message cost.
         self._prev_session_cost: float = 0.0
 
+        # SDK (CLI) session ID — used for native session resumption so the CLI
+        # manages conversation history and auto-compaction internally.
+        self._sdk_session_id: str | None = None
+
         # Prompt caching: volatile context (timestamp + context summary) is held
         # here and prepended to the first user message instead of being baked
         # into the system prompt, keeping the system prompt cache-friendly.
@@ -570,11 +574,28 @@ class ClydeChatManager:
                 pass
         return {"continue_": True}
 
-    async def initialize(self, prior_messages: list[dict] | None = None):
-        """Create and connect the ClaudeSDKClient with subagent support."""
+    async def initialize(
+        self,
+        prior_messages: list[dict] | None = None,
+        sdk_session_id: str | None = None,
+    ):
+        """Create and connect the ClaudeSDKClient with subagent support.
+
+        Args:
+            prior_messages: Chat history from Supabase (used as fallback context
+                summary when no SDK session is available for native resumption).
+            sdk_session_id: The CLI's own session ID. When provided, the CLI
+                resumes its persisted session natively — no manual context
+                summary is needed because the CLI already has the full
+                conversation and handles auto-compaction internally.
+        """
         # Reset volatile context state for fresh init (e.g. after cancel/reconnect)
         self._volatile_context = ""
         self._volatile_context_sent = False
+
+        # If we have an SDK session ID, store it for later context_roll() calls
+        if sdk_session_id:
+            self._sdk_session_id = sdk_session_id
 
         system_prompt = self._load_system_prompt()
 
@@ -586,8 +607,15 @@ class ClydeChatManager:
         except Exception:
             caching_enabled = True
 
-        # Inject prior conversation context when resuming a session
-        if prior_messages:
+        # Context injection strategy:
+        # 1. If we have an SDK session ID → CLI resumes natively (no summary needed)
+        # 2. Else if we have prior messages → build a manual context summary (fallback)
+        if sdk_session_id:
+            logger.info(
+                f"[INIT] Resuming SDK session {sdk_session_id} — "
+                "CLI handles conversation history and auto-compaction"
+            )
+        elif prior_messages:
             context_summary = self._build_context_summary(prior_messages)
             if caching_enabled:
                 # Move context summary to volatile context → prepended to first user message
@@ -629,6 +657,9 @@ class ClydeChatManager:
         options = ClaudeAgentOptions(
             model="claude-opus-4-6",
             system_prompt=system_prompt,
+            # Native session resumption: let the CLI manage conversation history
+            # and auto-compaction instead of injecting a manual context summary.
+            resume=sdk_session_id if sdk_session_id else None,
             allowed_tools=[
                 # Standard file/code tools
                 "Read", "Edit", "Write", "Bash", "Glob", "Grep",
@@ -728,6 +759,8 @@ class ClydeChatManager:
 
             elif isinstance(message, ResultMessage):
                 self.session_id = getattr(message, "session_id", None)
+                # Capture the CLI's session ID for native resumption
+                self._sdk_session_id = self.session_id
                 session_total = getattr(message, "total_cost_usd", 0) or 0
                 incremental_cost = max(session_total - self._prev_session_cost, 0)
                 self._prev_session_cost = session_total
@@ -754,6 +787,30 @@ class ClydeChatManager:
             except Exception as e:
                 logger.warning(f"[ABORT] Error during disconnect: {e}")
             self.client = None
+
+    async def context_roll(self, prior_messages: list[dict] | None = None) -> None:
+        """Roll the context by reinitializing the SDK client.
+
+        If we have an SDK session ID, the CLI resumes its persisted session
+        and handles compaction automatically. Otherwise, falls back to a
+        manual context summary from prior_messages.
+        """
+        logger.info(
+            f"[CONTEXT_ROLL] Rolling context — "
+            f"sdk_session={self._sdk_session_id or 'none'}"
+        )
+        if self.client:
+            try:
+                await self.client.disconnect()
+            except Exception as e:
+                logger.warning(f"[CONTEXT_ROLL] Error during disconnect: {e}")
+            self.client = None
+
+        await self.initialize(
+            prior_messages=prior_messages,
+            sdk_session_id=self._sdk_session_id,
+        )
+        logger.info("[CONTEXT_ROLL] Context roll complete — client reinitialized")
 
     async def refresh_agents(self) -> None:
         """

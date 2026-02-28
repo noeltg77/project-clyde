@@ -162,6 +162,41 @@ async def update_session_title(session_id: str, title: str) -> dict:
     return result.data[0] if result.data else {}
 
 
+async def update_session_sdk_id(session_id: str, sdk_session_id: str) -> dict:
+    """Store the Claude SDK session ID in the session's metadata."""
+    client = get_supabase()
+    # Fetch current metadata to merge (avoid overwriting other fields)
+    current = (
+        client.table("chat_sessions")
+        .select("metadata")
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
+    )
+    meta = (current.data[0].get("metadata") or {}) if current.data else {}
+    meta["sdk_session_id"] = sdk_session_id
+    result = (
+        client.table("chat_sessions")
+        .update({"metadata": meta})
+        .eq("id", session_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+async def get_session(session_id: str) -> dict | None:
+    """Get a session record by ID (includes metadata with sdk_session_id)."""
+    client = get_supabase()
+    result = (
+        client.table("chat_sessions")
+        .select("*")
+        .eq("id", session_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 # --- Activity Events ---
 
 
