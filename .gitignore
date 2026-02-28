@@ -25,7 +25,7 @@ Thumbs.db
 .claude/settings.local.json
 
 # Working directory (contains runtime data)
-working/settings.json
+working/registry.json
 working/agents/*
 working/logs/*
 working/output/*

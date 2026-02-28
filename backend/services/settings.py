@@ -1,9 +1,10 @@
 """
-Settings Service — manages working/settings.json as a user-local config file.
+Settings Service — manages working/settings.json as the user config file.
 
-Separated from registry.json so that git pulls don't destroy user settings.
-settings.json is gitignored; defaults are applied automatically for any
-missing keys so new settings introduced in future versions just work.
+Tracked in git so new settings can be shipped with updates. Defaults are
+applied automatically for any missing keys so new settings introduced in
+future versions just work. registry.json (agent data) is gitignored to
+protect user-created agents from being overwritten on pull.
 """
 
 import json

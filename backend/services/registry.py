@@ -24,8 +24,16 @@ def _registry_path(working_dir: str) -> str:
     return os.path.join(working_dir, "registry.json")
 
 
+def _default_registry_path(working_dir: str) -> str:
+    return os.path.join(working_dir, "registry.default.json")
+
+
 def load_registry(working_dir: str) -> dict[str, Any]:
-    """Read and parse registry.json with in-memory TTL cache."""
+    """Read and parse registry.json with in-memory TTL cache.
+
+    If registry.json doesn't exist yet (e.g. fresh clone), copies from
+    registry.default.json so the user gets the initial Clyde orchestrator.
+    """
     path = _registry_path(working_dir)
     now = time.monotonic()
 
@@ -34,6 +42,18 @@ def load_registry(working_dir: str) -> dict[str, Any]:
         cached_time, cached_data = cached
         if now - cached_time < _CACHE_TTL:
             return cached_data
+
+    # Bootstrap: copy from tracked default template on first run
+    if not os.path.exists(path):
+        default_path = _default_registry_path(working_dir)
+        if os.path.exists(default_path):
+            import shutil
+            shutil.copy2(default_path, path)
+        else:
+            raise FileNotFoundError(
+                f"Neither {path} nor {default_path} found. "
+                "Ensure registry.default.json exists in the working directory."
+            )
 
     with open(path, "r") as f:
         data = json.load(f)

@@ -1,0 +1,11 @@
+{
+  "self_edit_enabled": true,
+  "concurrency_cap": 5,
+  "max_team_size": 3,
+  "cost_alert_threshold_usd": 0,
+  "proactive_mode_enabled": false,
+  "proactive_interval_hours": 24,
+  "save_uploads_enabled": true,
+  "prompt_caching_enabled": true,
+  "prevent_sleep_enabled": false
+}
