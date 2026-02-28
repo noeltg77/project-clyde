@@ -54,12 +54,10 @@ class SelfImprovementService:
         - reason: str — why the change was made (or why not)
         - new_prompt: str | None — the improved prompt text (if improved)
         """
-        from services.registry import load_registry
+        from services.settings import load_settings
 
-        registry = load_registry(self.working_dir)
-        self_edit_enabled = registry.get("orchestrator", {}).get(
-            "self_edit_enabled", True
-        )
+        settings = load_settings(self.working_dir)
+        self_edit_enabled = settings.get("self_edit_enabled", True)
 
         if not self_edit_enabled:
             return {

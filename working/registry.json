@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": "2026-02-27T11:00:27.650079+00:00",
+  "updated_at": "2026-02-28T00:00:00.000000+00:00",
   "orchestrator": {
     "id": "clyde-001",
     "name": "Clyde",
@@ -8,18 +8,11 @@
     "model": "opus",
     "avatar": "/avatars/clyde.jpeg",
     "system_prompt_path": "/working/prompts/clyde-system.md",
-    "self_edit_enabled": true,
     "status": "active",
     "skills": [
       "Skill creator"
     ],
     "memory_path": "/working/memory/clyde-memory.md"
   },
-  "agents": [],
-  "concurrency_cap": 5,
-  "max_team_size": 3,
-  "proactive_interval_hours": 24,
-  "proactive_mode_enabled": false,
-  "save_uploads_enabled": true,
-  "prompt_caching_enabled": true
+  "agents": []
 }

@@ -21,6 +21,7 @@ type RegistrySettings = {
   proactive_interval_hours: number;
   save_uploads_enabled: boolean;
   prompt_caching_enabled: boolean;
+  prevent_sleep_enabled: boolean;
 };
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -920,6 +921,47 @@ function ControlsTab() {
         </div>
         <p className="text-[10px] text-text-secondary/50 mt-1.5">
           Takes effect on next new chat session
+        </p>
+      </div>
+
+      {/* Sleep Prevention */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+          Sleep Prevention
+        </h3>
+        <div className="flex items-center justify-between p-3 bg-bg-tertiary rounded-[2px] border border-border">
+          <div>
+            <p className="text-sm text-text-primary">
+              Prevent device sleep
+            </p>
+            <p className="text-[10px] text-text-secondary/60 mt-0.5">
+              Keeps the host machine awake while the backend is running. Required for schedules and triggers to fire reliably.
+            </p>
+          </div>
+          <button
+            onClick={() =>
+              updateSetting(
+                "prevent_sleep_enabled",
+                !settings.prevent_sleep_enabled
+              )
+            }
+            className={`relative w-10 h-5 shrink-0 rounded-full transition-colors ${
+              settings.prevent_sleep_enabled
+                ? "bg-accent-primary"
+                : "bg-border"
+            }`}
+          >
+            <div
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-primary transition-transform ${
+                settings.prevent_sleep_enabled
+                  ? "translate-x-5"
+                  : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-[10px] text-text-secondary/50 mt-1.5">
+          Uses caffeinate on macOS, SetThreadExecutionState on Windows
         </p>
       </div>
 

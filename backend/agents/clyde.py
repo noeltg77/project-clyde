@@ -117,10 +117,10 @@ class ClydeChatManager:
 
         # Check if prompt caching is enabled
         try:
-            registry = load_registry(self.working_dir)
-            caching_enabled = registry.get("prompt_caching_enabled", True)
+            from services.settings import load_settings
+            _settings = load_settings(self.working_dir)
+            caching_enabled = _settings.get("prompt_caching_enabled", True)
         except Exception:
-            registry = {}
             caching_enabled = True
 
         # Current local time — either injected into system prompt (no caching)
@@ -458,8 +458,9 @@ class ClydeChatManager:
 
         # Log concurrency warning if approaching cap
         try:
-            registry = load_registry(self.working_dir)
-            cap = registry.get("concurrency_cap", 5)
+            from services.settings import load_settings
+            _settings = load_settings(self.working_dir)
+            cap = _settings.get("concurrency_cap", 5)
             if self._active_agent_count > cap:
                 logger.warning(
                     f"[CONCURRENCY] Active agents ({self._active_agent_count}) "
@@ -602,8 +603,9 @@ class ClydeChatManager:
         # Check caching preference (already loaded in _load_system_prompt but
         # we need the flag here too for context summary handling)
         try:
-            registry = load_registry(self.working_dir)
-            caching_enabled = registry.get("prompt_caching_enabled", True)
+            from services.settings import load_settings
+            _settings = load_settings(self.working_dir)
+            caching_enabled = _settings.get("prompt_caching_enabled", True)
         except Exception:
             caching_enabled = True
 

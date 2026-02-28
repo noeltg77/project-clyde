@@ -47,10 +47,12 @@ from services.supabase_client import (
 )
 from services.embeddings import generate_embedding, generate_query_embedding
 from services.registry import load_registry, save_registry
+from services.settings import load_settings, update_settings
 from services.scheduler import TaskScheduler
 from services.file_watcher import FileWatcherService
 from services.performance_logger import PerformanceLogger
 from services.proactive_engine import ProactiveEngine
+from services.sleep_prevention import SleepPrevention
 
 # Load environment from project root
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env.local"))
@@ -85,6 +87,9 @@ _performance_logger: PerformanceLogger | None = None
 # Phase 6: Proactive engine and connected WS clients for broadcast
 _proactive_engine: ProactiveEngine | None = None
 _connected_clients: set[WebSocket] = set()
+
+# Sleep prevention service
+_sleep_prevention: SleepPrevention | None = None
 
 
 async def _broadcast_insights(insights: list[dict]):
@@ -130,8 +135,8 @@ async def _run_proactive_analysis():
     if not _proactive_engine:
         return
     try:
-        registry = load_registry(WORKING_DIR)
-        if not registry.get("proactive_mode_enabled", True):
+        settings = load_settings(WORKING_DIR)
+        if not settings.get("proactive_mode_enabled", True):
             logger.info("[Proactive] Proactive mode disabled — skipping")
             return
         new_insights = await _proactive_engine.run_analysis()
@@ -142,7 +147,7 @@ async def _run_proactive_analysis():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _scheduler, _file_watcher, _performance_logger, _proactive_engine
+    global _scheduler, _file_watcher, _performance_logger, _proactive_engine, _sleep_prevention
 
     # Startup
     print(f"[Clyde Backend] Working directory: {WORKING_DIR}")
@@ -163,8 +168,8 @@ async def lifespan(app: FastAPI):
 
     # Phase 6: Proactive engine + scheduled job
     _proactive_engine = ProactiveEngine(WORKING_DIR)
-    registry = load_registry(WORKING_DIR)
-    interval_hours = max(1, min(24, registry.get("proactive_interval_hours", 6)))
+    settings = load_settings(WORKING_DIR)
+    interval_hours = max(1, min(24, settings.get("proactive_interval_hours", 6)))
     if _scheduler:
         from apscheduler.triggers.cron import CronTrigger
 
@@ -178,12 +183,24 @@ async def lifespan(app: FastAPI):
         )
     print(f"[Clyde Backend] Proactive engine initialised (interval: {interval_hours}h)")
 
+    # Sleep prevention (start if enabled in settings)
+    _sleep_prevention = SleepPrevention()
+    if settings.get("prevent_sleep_enabled", False):
+        if _sleep_prevention.start():
+            print(f"[Clyde Backend] Sleep prevention active ({_sleep_prevention.platform_name}: {_sleep_prevention.method_description})")
+        else:
+            print(f"[Clyde Backend] Sleep prevention failed to start on {_sleep_prevention.platform_name}")
+    else:
+        print("[Clyde Backend] Sleep prevention disabled")
+
     # Ensure uploads directory exists
     os.makedirs(os.path.join(WORKING_DIR, "uploads"), exist_ok=True)
 
     yield
 
     # Shutdown
+    if _sleep_prevention:
+        _sleep_prevention.stop()
     if _file_watcher:
         await _file_watcher.stop()
     if _scheduler:
@@ -834,57 +851,39 @@ async def rollback_prompt(agent_id: str, version_id: str):
 
 @app.get("/api/registry/settings")
 async def get_registry_settings():
-    """Get orchestrator settings from registry."""
+    """Get user settings from settings.json (with defaults applied)."""
     try:
-        registry = load_registry(WORKING_DIR)
-        orchestrator = registry.get("orchestrator", {})
-        return {
-            "self_edit_enabled": orchestrator.get("self_edit_enabled", True),
-            "concurrency_cap": registry.get("concurrency_cap", 5),
-            "max_team_size": registry.get("max_team_size", 3),
-            "cost_alert_threshold_usd": registry.get("cost_alert_threshold_usd", 0),
-            "proactive_mode_enabled": registry.get("proactive_mode_enabled", True),
-            "proactive_interval_hours": registry.get("proactive_interval_hours", 6),
-            "save_uploads_enabled": registry.get("save_uploads_enabled", True),
-            "prompt_caching_enabled": registry.get("prompt_caching_enabled", True),
-        }
+        return load_settings(WORKING_DIR)
     except Exception as e:
-        logger.error(f"[API] Get registry settings failed: {e}")
+        logger.error(f"[API] Get settings failed: {e}")
         return {"error": str(e)}
 
 
 @app.patch("/api/registry/settings")
 async def update_registry_settings(body: dict):
-    """Update orchestrator settings in registry."""
+    """Update user settings in settings.json."""
     try:
-        registry = load_registry(WORKING_DIR)
+        # Validate and coerce individual fields
+        updates: dict[str, Any] = {}
 
         if "self_edit_enabled" in body:
-            registry.setdefault("orchestrator", {})["self_edit_enabled"] = bool(
-                body["self_edit_enabled"]
-            )
+            updates["self_edit_enabled"] = bool(body["self_edit_enabled"])
         if "concurrency_cap" in body:
-            cap = int(body["concurrency_cap"])
-            registry["concurrency_cap"] = max(1, min(10, cap))
+            updates["concurrency_cap"] = max(1, min(10, int(body["concurrency_cap"])))
         if "max_team_size" in body:
-            size = int(body["max_team_size"])
-            registry["max_team_size"] = max(1, min(5, size))
+            updates["max_team_size"] = max(1, min(5, int(body["max_team_size"])))
         if "cost_alert_threshold_usd" in body:
-            registry["cost_alert_threshold_usd"] = float(
-                body["cost_alert_threshold_usd"]
-            )
+            updates["cost_alert_threshold_usd"] = float(body["cost_alert_threshold_usd"])
         if "proactive_mode_enabled" in body:
-            registry["proactive_mode_enabled"] = bool(body["proactive_mode_enabled"])
+            updates["proactive_mode_enabled"] = bool(body["proactive_mode_enabled"])
         if "proactive_interval_hours" in body:
-            hours = int(body["proactive_interval_hours"])
-            hours = max(1, min(24, hours))
-            registry["proactive_interval_hours"] = hours
+            hours = max(1, min(24, int(body["proactive_interval_hours"])))
+            updates["proactive_interval_hours"] = hours
             # Re-register the scheduled job with the new interval
             if _scheduler:
                 try:
                     from apscheduler.triggers.cron import CronTrigger
 
-                    # */24 is invalid for cron hours (range 0-23); 24h means "once daily at midnight"
                     cron_hour = "0" if hours >= 24 else f"*/{hours}"
                     _scheduler.scheduler.add_job(
                         _run_proactive_analysis,
@@ -894,17 +893,27 @@ async def update_registry_settings(body: dict):
                     )
                 except Exception as e:
                     logger.warning(f"[API] Failed to reschedule proactive job: {e}")
-
         if "save_uploads_enabled" in body:
-            registry["save_uploads_enabled"] = bool(body["save_uploads_enabled"])
-
+            updates["save_uploads_enabled"] = bool(body["save_uploads_enabled"])
         if "prompt_caching_enabled" in body:
-            registry["prompt_caching_enabled"] = bool(body["prompt_caching_enabled"])
+            updates["prompt_caching_enabled"] = bool(body["prompt_caching_enabled"])
+        if "prevent_sleep_enabled" in body:
+            enabled = bool(body["prevent_sleep_enabled"])
+            updates["prevent_sleep_enabled"] = enabled
+            # Start or stop the service in real-time
+            if _sleep_prevention:
+                if enabled and not _sleep_prevention.is_active:
+                    _sleep_prevention.start()
+                    logger.info("[API] Sleep prevention started via settings toggle")
+                elif not enabled and _sleep_prevention.is_active:
+                    _sleep_prevention.stop()
+                    logger.info("[API] Sleep prevention stopped via settings toggle")
 
-        save_registry(WORKING_DIR, registry)
+        if updates:
+            update_settings(WORKING_DIR, updates)
         return {"success": True}
     except Exception as e:
-        logger.error(f"[API] Update registry settings failed: {e}")
+        logger.error(f"[API] Update settings failed: {e}")
         return {"error": str(e)}
 
 
@@ -1982,8 +1991,8 @@ async def chat_websocket(ws: WebSocket):
                     if not file_refs:
                         return
                     try:
-                        reg = load_registry(WORKING_DIR)
-                        if reg.get("save_uploads_enabled", True):
+                        s = load_settings(WORKING_DIR)
+                        if s.get("save_uploads_enabled", True):
                             return  # Saving is on — keep files
                         for ref_path in file_refs:
                             if ref_path.startswith("uploads/"):

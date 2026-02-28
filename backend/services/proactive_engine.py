@@ -385,10 +385,10 @@ class ProactiveEngine:
 
     async def _enhance_with_clyde(self, insights: list[dict]) -> list[dict]:
         """Optionally use a headless Clyde session to rewrite insight descriptions."""
-        from services.registry import load_registry
+        from services.settings import load_settings
 
-        registry = load_registry(self.working_dir)
-        proactive_enabled = registry.get("proactive_mode_enabled", True)
+        settings = load_settings(self.working_dir)
+        proactive_enabled = settings.get("proactive_mode_enabled", True)
 
         if not proactive_enabled or not insights:
             return insights
