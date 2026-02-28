@@ -482,6 +482,18 @@ class ClydeChatManager:
         agent_label = agent_type or agent_id
         description = "Team member started" if is_team_member else "Agent started"
 
+        # Look up full agent data from registry so the frontend gets accurate
+        # model, avatar, name, and role instead of falling back to defaults.
+        registry_agent: dict[str, Any] = {}
+        try:
+            from services.registry import get_agent_by_name
+            lookup_name = agent_type or agent_id
+            found = get_agent_by_name(self.working_dir, lookup_name)
+            if found:
+                registry_agent = found
+        except Exception:
+            pass
+
         if self.ws:
             try:
                 await self.ws.send_json({
@@ -492,6 +504,12 @@ class ClydeChatManager:
                         "agent_type": agent_type,
                         "parent_agent": parent_agent,
                         "is_team_member": is_team_member,
+                        # Full registry data for accurate display
+                        "registry_id": registry_agent.get("id", ""),
+                        "name": registry_agent.get("name", agent_label),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
                     },
                 })
             except Exception:
@@ -530,6 +548,17 @@ class ClydeChatManager:
         agent_label = agent_type or agent_id
         description = "Team member stopped" if is_team_member else "Agent stopped"
 
+        # Look up full agent data from registry
+        registry_agent: dict[str, Any] = {}
+        try:
+            from services.registry import get_agent_by_name
+            lookup_name = agent_type or agent_id
+            found = get_agent_by_name(self.working_dir, lookup_name)
+            if found:
+                registry_agent = found
+        except Exception:
+            pass
+
         if self.ws:
             try:
                 await self.ws.send_json({
@@ -540,6 +569,10 @@ class ClydeChatManager:
                         "agent_type": agent_type,
                         "parent_agent": parent_agent,
                         "is_team_member": is_team_member,
+                        "registry_id": registry_agent.get("id", ""),
+                        "name": registry_agent.get("name", agent_label),
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
                     },
                 })
             except Exception:

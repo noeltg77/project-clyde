@@ -52,10 +52,6 @@ export function ChatContainer() {
   const streamingMsgId = useRef<string | null>(null);
   const lastAgentMsgId = useRef<string | null>(null);
 
-  // Ref for agents list so handleMessage callback can look up agent details
-  const agentsRef = useRef(agents);
-  agentsRef.current = agents;
-
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
 
@@ -315,10 +311,16 @@ export function ChatContainer() {
           const parentAgent = (msg.data.parent_agent as string) || undefined;
           const isTeamMember = (msg.data.is_team_member as boolean) || false;
 
+          // Use registry data sent by backend (accurate source of truth)
+          const regName = (msg.data.name as string) || agentType || agentId;
+          const regModel = msg.data.model as string | undefined;
+          const regAvatar = msg.data.avatar as string | undefined;
+          const regRegistryId = (msg.data.registry_id as string) || agentId;
+
           addActivityEvent({
             id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            agentId,
-            agentName: agentType || agentId,
+            agentId: regRegistryId,
+            agentName: regName,
             eventType: eventType as "started" | "stopped",
             description: isTeamMember
               ? `Team member ${eventType}`
@@ -334,26 +336,23 @@ export function ChatContainer() {
             if (stepTarget) {
               addStepToMessage(stepTarget, {
                 type: eventType === "started" ? "agent_started" : "agent_stopped",
-                label: agentType || agentId,
+                label: regName,
                 detail: isTeamMember ? "Team member" : "Subagent",
                 timestamp: new Date().toISOString(),
               });
             }
           }
 
-          // Update active agent tracking — pass metadata for floating card display
+          // Update active agent tracking — use registry data from backend
           if (eventType === "started") {
-            const registeredAgent = agentsRef.current.find(
-              (a) => a.registryId === agentId
-            );
-            setAgentActive(agentId, true, {
-              name: registeredAgent?.name || agentType || agentId,
-              model: registeredAgent?.model,
-              avatar: registeredAgent?.avatar,
-              role: registeredAgent?.role || (isTeamMember ? "Team member" : "Subagent"),
+            setAgentActive(regRegistryId, true, {
+              name: regName,
+              model: regModel as "opus" | "sonnet" | "haiku" | undefined,
+              avatar: regAvatar,
+              role: (msg.data.role as string) || (isTeamMember ? "Team member" : "Subagent"),
             });
           } else if (eventType === "stopped") {
-            setAgentActive(agentId, false);
+            setAgentActive(regRegistryId, false);
           }
           break;
         }

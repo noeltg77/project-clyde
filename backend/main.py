@@ -1668,7 +1668,10 @@ async def chat_websocket(ws: WebSocket):
                 agent_content = user_content
                 if file_refs:
                     file_context_parts = []
+                    image_refs = []  # Images handled separately via Read tool
                     max_file_size = 1_000_000  # 1MB limit per file
+                    _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"}
+
                     for ref_path in file_refs:
                         try:
                             target = _safe_resolve(ref_path)
@@ -1678,30 +1681,41 @@ async def chat_websocket(ws: WebSocket):
                                 )
                                 continue
                             file_size = target.stat().st_size
+                            ext = target.suffix.lower()
+
+                            # Images: don't inline binary data — tell Claude to
+                            # use its Read tool which handles images natively
+                            if ext in _IMAGE_EXTENSIONS:
+                                size_kb = round(file_size / 1024)
+                                image_refs.append(ref_path)
+                                file_context_parts.append(
+                                    f"--- @{ref_path} ---\n"
+                                    f"[Image file ({ext}, {size_kb}KB). "
+                                    f"Use the Read tool on the absolute path to view this image: "
+                                    f"{target}]\n"
+                                    f"--- End of @{ref_path} ---"
+                                )
+                                continue
+
                             if file_size > max_file_size:
                                 size_mb = round(file_size / 1_000_000, 1)
                                 file_context_parts.append(
                                     f"--- @{ref_path} ---\n[File too large to inline: {size_mb}MB. The file exists at {ref_path} in the working directory.]\n--- End of @{ref_path} ---"
                                 )
                                 continue
-                            # Try reading as text first
+                            # Try reading as text
                             try:
                                 text = target.read_text(encoding="utf-8")
                                 file_context_parts.append(
                                     f"--- Contents of @{ref_path} ---\n{text}\n--- End of @{ref_path} ---"
                                 )
                             except (UnicodeDecodeError, ValueError):
-                                # Binary file — try reading as latin-1 fallback (lossless byte mapping)
-                                try:
-                                    text = target.read_text(encoding="latin-1")
-                                    file_context_parts.append(
-                                        f"--- Contents of @{ref_path} (binary file, best-effort decode) ---\n{text}\n--- End of @{ref_path} ---"
-                                    )
-                                except Exception:
-                                    ext = target.suffix.lower()
-                                    file_context_parts.append(
-                                        f"--- @{ref_path} ---\n[Binary file ({ext}) — {round(file_size/1024)}KB. Cannot display inline. The file exists at {ref_path} in the working directory and can be accessed via tools.]\n--- End of @{ref_path} ---"
-                                    )
+                                # Binary file — don't inline, just reference
+                                file_context_parts.append(
+                                    f"--- @{ref_path} ---\n[Binary file ({ext}) — {round(file_size/1024)}KB. "
+                                    f"Cannot display inline. The file exists at {target} "
+                                    f"and can be accessed via the Read tool.]\n--- End of @{ref_path} ---"
+                                )
                         except Exception as e:
                             logger.warning(f"[WS] Failed to read referenced file {ref_path}: {e}")
                             file_context_parts.append(
