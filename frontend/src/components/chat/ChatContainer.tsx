@@ -579,14 +579,21 @@ export function ChatContainer() {
   }, []);
 
   // Listen for cancel-request events from ActiveAgentOverlay kill button
+  // Uses sendRef (stable ref) to avoid dependency on handleCancel declaration order
   useEffect(() => {
     const handleCancelEvent = () => {
-      handleCancel();
+      sendRef.current({ type: "cancel_request" });
+      if (streamingMsgId.current) {
+        updateMessage(streamingMsgId.current, { isStreaming: false });
+        appendToMessage(streamingMsgId.current, "\n\n_[Cancelled by user]_");
+      }
+      streamingMsgId.current = null;
+      setStreaming(false);
     };
     window.addEventListener("cancel-request", handleCancelEvent);
     return () =>
       window.removeEventListener("cancel-request", handleCancelEvent);
-  }, [handleCancel]);
+  }, [updateMessage, appendToMessage, setStreaming]);
 
   // Listen for insight-action events from InsightsDashboard
   useEffect(() => {
