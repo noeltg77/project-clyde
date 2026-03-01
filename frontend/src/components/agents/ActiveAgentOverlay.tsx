@@ -73,6 +73,28 @@ function WorkingPulse() {
   );
 }
 
+/* ─── Kill process button ─── */
+
+function KillButton() {
+  const handleKill = () => {
+    window.dispatchEvent(new CustomEvent("cancel-request"));
+  };
+
+  return (
+    <button
+      onClick={handleKill}
+      className="
+        w-full mt-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider
+        text-red-400 border border-red-500/30 rounded-[2px]
+        hover:bg-red-500/15 hover:text-red-300 hover:border-red-500/50
+        active:scale-95 transition-all cursor-pointer
+      "
+    >
+      Kill Process
+    </button>
+  );
+}
+
 /* ─── Single floating agent card ─── */
 
 function AgentCard({ agentId, fallbackAgent, phase }: { agentId: string; fallbackAgent: Agent; phase: CardPhase }) {
@@ -148,6 +170,9 @@ function AgentCard({ agentId, fallbackAgent, phase }: { agentId: string; fallbac
       </div>
 
       <ModelBadge model={agent.model} />
+
+      {/* Kill button — only shown while agent is actively working */}
+      {phase === "active" && <KillButton />}
     </div>
   );
 }

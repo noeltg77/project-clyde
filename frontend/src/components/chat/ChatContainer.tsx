@@ -578,6 +578,16 @@ export function ChatContainer() {
       window.removeEventListener("permission-response", handlePermEvent);
   }, []);
 
+  // Listen for cancel-request events from ActiveAgentOverlay kill button
+  useEffect(() => {
+    const handleCancelEvent = () => {
+      handleCancel();
+    };
+    window.addEventListener("cancel-request", handleCancelEvent);
+    return () =>
+      window.removeEventListener("cancel-request", handleCancelEvent);
+  }, [handleCancel]);
+
   // Listen for insight-action events from InsightsDashboard
   useEffect(() => {
     const handleInsightAction = (e: Event) => {
