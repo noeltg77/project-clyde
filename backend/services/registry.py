@@ -251,7 +251,7 @@ def get_used_avatars(working_dir: str) -> set[str]:
 
 def select_random_avatar(working_dir: str, gender: str = "male") -> str | None:
     """
-    Scan frontend/public/avatars/{gender}/ for .jpeg files,
+    Scan frontend/public/avatars/{gender}/ for image files (.jpeg, .jpg, .png, .webp),
     find ones not already assigned, and return a random unused avatar path.
     Returns None if no avatars are available.
     """
@@ -262,10 +262,10 @@ def select_random_avatar(working_dir: str, gender: str = "male") -> str | None:
     if not os.path.isdir(avatars_dir):
         return None
 
-    # Find all jpeg files
+    # Find all supported image files
     available = []
     for filename in os.listdir(avatars_dir):
-        if filename.lower().endswith((".jpeg", ".jpg", ".png")):
+        if filename.lower().endswith((".jpeg", ".jpg", ".png", ".webp")):
             avatar_path = f"/avatars/{gender}/{filename}"
             available.append(avatar_path)
 
