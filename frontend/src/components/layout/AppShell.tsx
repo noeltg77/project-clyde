@@ -20,6 +20,7 @@ import { ScheduleManager } from "@/components/schedules/ScheduleManager";
 import { TriggerManager } from "@/components/triggers/TriggerManager";
 import { SkillsDashboard } from "@/components/skills/SkillsDashboard";
 import { FileBrowser } from "@/components/files/FileBrowser";
+import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 
@@ -96,6 +97,7 @@ export function AppShell() {
                 {activeView === "performance" && <PerformanceDashboard />}
                 {activeView === "insights" && <InsightsDashboard />}
                 {activeView === "files" && <FileBrowser />}
+                {activeView === "tasks" && <TaskBoard />}
               </motion.div>
             )}
           </AnimatePresence>

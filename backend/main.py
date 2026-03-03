@@ -45,6 +45,15 @@ from services.supabase_client import (
     update_insight_status,
     delete_insight,
     reset_client as reset_supabase_client,
+    get_task_columns,
+    create_task_column,
+    update_task_column,
+    delete_task_column,
+    get_tasks,
+    create_task,
+    update_task,
+    delete_task,
+    reorder_tasks,
 )
 from services.embeddings import generate_embedding, generate_query_embedding
 from services.registry import load_registry, save_registry
@@ -125,6 +134,18 @@ async def broadcast_session_created(session: dict):
                     "created_at": session.get("created_at", ""),
                 },
             })
+        except Exception:
+            stale.append(client)
+    for s in stale:
+        _connected_clients.discard(s)
+
+
+async def broadcast_task_event(event_type: str, data: dict):
+    """Broadcast a task board event to all connected WebSocket clients."""
+    stale: list[WebSocket] = []
+    for client in _connected_clients:
+        try:
+            await client.send_json({"type": event_type, "data": data})
         except Exception:
             stale.append(client)
     for s in stale:
@@ -676,6 +697,134 @@ async def trigger_proactive_analysis():
     except Exception as e:
         logger.error(f"[API] Manual insight trigger failed: {e}")
         return {"error": str(e), "triggered": False}
+
+
+# --- Task Board (Kanban) ---
+
+
+@app.get("/api/tasks/columns")
+async def list_task_columns():
+    """List all kanban columns ordered by position."""
+    try:
+        columns = await get_task_columns()
+        return {"columns": columns}
+    except Exception as e:
+        logger.error(f"[API] Failed to list task columns: {e}")
+        return {"columns": [], "error": str(e)}
+
+
+@app.post("/api/tasks/columns")
+async def add_task_column(body: dict):
+    """Create a new kanban column."""
+    try:
+        name = body.get("name", "New Column")
+        position = body.get("position", 0)
+        col = await create_task_column(name, position)
+        await broadcast_task_event("task_column_created", col)
+        return {"column": col}
+    except Exception as e:
+        logger.error(f"[API] Failed to create task column: {e}")
+        return {"error": str(e)}
+
+
+@app.patch("/api/tasks/columns/{column_id}")
+async def patch_task_column(column_id: str, body: dict):
+    """Update a kanban column name or position."""
+    try:
+        col = await update_task_column(
+            column_id,
+            name=body.get("name"),
+            position=body.get("position"),
+        )
+        await broadcast_task_event("task_column_updated", col)
+        return {"column": col}
+    except Exception as e:
+        logger.error(f"[API] Failed to update task column: {e}")
+        return {"error": str(e)}
+
+
+@app.delete("/api/tasks/columns/{column_id}")
+async def remove_task_column(column_id: str):
+    """Delete a kanban column and its tasks."""
+    try:
+        deleted = await delete_task_column(column_id)
+        if not deleted:
+            return {"error": "Column not found"}
+        await broadcast_task_event("task_column_deleted", {"id": column_id})
+        return {"deleted": True, "id": column_id}
+    except Exception as e:
+        logger.error(f"[API] Failed to delete task column: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/api/tasks")
+async def list_tasks():
+    """List all tasks."""
+    try:
+        tasks = await get_tasks()
+        return {"tasks": tasks}
+    except Exception as e:
+        logger.error(f"[API] Failed to list tasks: {e}")
+        return {"tasks": [], "error": str(e)}
+
+
+@app.post("/api/tasks")
+async def add_task(body: dict):
+    """Create a new task."""
+    try:
+        task = await create_task(
+            title=body.get("title", "Untitled"),
+            column_id=body["column_id"],
+            description=body.get("description", ""),
+            assignee_type=body.get("assignee_type"),
+            assignee_id=body.get("assignee_id"),
+            assignee_name=body.get("assignee_name"),
+            linked_docs=body.get("linked_docs"),
+            session_id=body.get("session_id"),
+        )
+        await broadcast_task_event("task_created", task)
+        return {"task": task}
+    except Exception as e:
+        logger.error(f"[API] Failed to create task: {e}")
+        return {"error": str(e)}
+
+
+@app.patch("/api/tasks/{task_id}")
+async def patch_task(task_id: str, body: dict):
+    """Update a task (title, description, column, position, assignee, docs)."""
+    try:
+        task = await update_task(task_id, **body)
+        await broadcast_task_event("task_updated", task)
+        return {"task": task}
+    except Exception as e:
+        logger.error(f"[API] Failed to update task: {e}")
+        return {"error": str(e)}
+
+
+@app.delete("/api/tasks/{task_id}")
+async def remove_task(task_id: str):
+    """Delete a task."""
+    try:
+        deleted = await delete_task(task_id)
+        if not deleted:
+            return {"error": "Task not found"}
+        await broadcast_task_event("task_deleted", {"id": task_id})
+        return {"deleted": True, "id": task_id}
+    except Exception as e:
+        logger.error(f"[API] Failed to delete task: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/tasks/reorder")
+async def reorder_task_positions(body: dict):
+    """Batch-update task positions after drag-and-drop."""
+    try:
+        updates = body.get("updates", [])
+        await reorder_tasks(updates)
+        return {"reordered": True}
+    except Exception as e:
+        logger.error(f"[API] Failed to reorder tasks: {e}")
+        return {"error": str(e)}
 
 
 # --- System Prompt Management (Phase 5B) ---

@@ -1,6 +1,6 @@
 import { createStore } from "zustand/vanilla";
 
-export type ActiveView = "chat" | "orgchart" | "skills" | "cost" | "schedules" | "triggers" | "performance" | "insights" | "files";
+export type ActiveView = "chat" | "orgchart" | "skills" | "cost" | "schedules" | "triggers" | "performance" | "insights" | "files" | "tasks";
 
 export type SettingsState = {
   workingDir: string;

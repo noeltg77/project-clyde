@@ -4,6 +4,8 @@ import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useInsightStore } from "@/stores/insight-store-provider";
+import { useTaskStore } from "@/stores/task-store-provider";
+import type { Task, TaskColumn } from "@/stores/task-store";
 import {
   useAgentWebSocket,
   type WebSocketMessage,
@@ -48,6 +50,14 @@ export function ChatContainer() {
 
   // Insight store actions
   const addInsight = useInsightStore((s) => s.addInsight);
+
+  // Task store actions
+  const addTaskToStore = useTaskStore((s) => s.addTask);
+  const updateTaskInStore = useTaskStore((s) => s.updateTask);
+  const removeTaskFromStore = useTaskStore((s) => s.removeTask);
+  const addColumnToStore = useTaskStore((s) => s.addColumn);
+  const updateColumnInStore = useTaskStore((s) => s.updateColumn);
+  const removeColumnFromStore = useTaskStore((s) => s.removeColumn);
 
   // Track current streaming message id and the last agent message (for cost attachment)
   const streamingMsgId = useRef<string | null>(null);
@@ -418,6 +428,40 @@ export function ChatContainer() {
           addInsight(insight);
           break;
         }
+
+        // --- Task Board real-time events ---
+
+        case "task_created": {
+          addTaskToStore(msg.data as Task);
+          break;
+        }
+
+        case "task_updated": {
+          const t = msg.data as Task;
+          updateTaskInStore(t.id, t);
+          break;
+        }
+
+        case "task_deleted": {
+          removeTaskFromStore(msg.data.id as string);
+          break;
+        }
+
+        case "task_column_created": {
+          addColumnToStore(msg.data as TaskColumn);
+          break;
+        }
+
+        case "task_column_updated": {
+          const c = msg.data as TaskColumn;
+          updateColumnInStore(c.id, c);
+          break;
+        }
+
+        case "task_column_deleted": {
+          removeColumnFromStore(msg.data.id as string);
+          break;
+        }
       }
     },
     [
@@ -438,6 +482,12 @@ export function ChatContainer() {
       setAgents,
       setAgentActive,
       addInsight,
+      addTaskToStore,
+      updateTaskInStore,
+      removeTaskFromStore,
+      addColumnToStore,
+      updateColumnInStore,
+      removeColumnFromStore,
     ]
   );
 
@@ -668,7 +718,7 @@ export function ChatContainer() {
   }
 
   const handleSend = useCallback(
-    (content: string, fileRefs?: string[], folderContext?: string) => {
+    (content: string, fileRefs?: string[], folderContext?: string, tasksEnabled?: boolean) => {
       // Add user message to store immediately (optimistic)
       addMessage({
         id: `user-${Date.now()}`,
@@ -685,12 +735,13 @@ export function ChatContainer() {
       // Mark as streaming so the thinking indicator shows immediately
       setStreaming(true);
 
-      // Send to backend — include file_refs and folder_context if present
+      // Send to backend — include file_refs, folder_context, and tasks_enabled if present
       send({
         type: "user_message",
         content,
         ...(fileRefs && fileRefs.length > 0 ? { file_refs: fileRefs } : {}),
         ...(folderContext !== undefined ? { folder_context: folderContext } : {}),
+        ...(tasksEnabled ? { tasks_enabled: true } : {}),
       });
     },
     [addMessage, setStreaming, send]

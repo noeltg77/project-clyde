@@ -4,6 +4,22 @@ A multi-agent AI system built on the Claude Agent SDK. Clyde is your personal AI
 
 ---
 
+## Features
+
+- **Multi-agent chat** — Clyde orchestrates a team of specialised sub-agents, delegating work and streaming responses in real time
+- **Org chart** — Visualise the agent hierarchy with live status indicators
+- **Skills dashboard** — Browse and manage agent capabilities
+- **File browser** — Explore the working directory, upload files, and reference them in chat with `@`
+- **Task board (Kanban)** — Drag-and-drop kanban board with customisable columns (Draft, Not Started, In Progress, Complete). Create tasks manually or let Clyde generate them during chat. Assign tasks to agents or yourself, link documents, and watch the board update live as work progresses
+- **Cost tracking** — Per-agent cost breakdown with daily, weekly, and monthly aggregates
+- **Schedules & triggers** — Automate agent runs with cron schedules or file-watch triggers
+- **Performance analytics** — Track agent response times and success rates
+- **Proactive insights** — Automated analysis that surfaces recommendations and optimisation opportunities
+- **System prompt management** — Version-controlled prompt editing with rollback support
+- **Global search** — Vector similarity search across all conversations (Cmd+K)
+
+---
+
 ## What You'll Need
 
 Before you start, make sure you have the following installed on your computer:
@@ -249,6 +265,60 @@ create trigger trg_proactive_insights_updated_at
   before update on proactive_insights
   for each row
   execute function update_proactive_insights_updated_at();
+
+-- ============================================
+-- Task Board (Kanban) — Columns
+-- ============================================
+create table if not exists public.task_columns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  position integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- Seed default columns
+insert into public.task_columns (name, position) values
+  ('Draft', 0),
+  ('Not Started', 1),
+  ('In Progress', 2),
+  ('Complete', 3);
+
+-- ============================================
+-- Task Board (Kanban) — Tasks
+-- ============================================
+create table if not exists public.tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text not null default '',
+  column_id uuid not null references public.task_columns(id) on delete cascade,
+  position integer not null default 0,
+  assignee_type text,
+  assignee_id text,
+  assignee_name text,
+  linked_docs jsonb default '[]'::jsonb,
+  session_id uuid references public.chat_sessions(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_tasks_column_id
+  on public.tasks(column_id, position);
+
+create index if not exists idx_tasks_updated_at
+  on public.tasks(updated_at desc);
+
+create or replace function update_tasks_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_tasks_updated_at
+  before update on public.tasks
+  for each row
+  execute function update_tasks_updated_at();
 ```
 
 If you see any errors, make sure you copied the entire block from the very first line (`create extension`) to the very last line.

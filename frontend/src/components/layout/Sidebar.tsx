@@ -353,6 +353,23 @@ export function Sidebar() {
           Files
         </button>
 
+        {/* Tasks */}
+        <button
+          onClick={() =>
+            setActiveView(activeView === "tasks" ? "chat" : "tasks")
+          }
+          className={`w-full text-left px-3 py-2 text-sm rounded-[2px] transition-colors flex items-center justify-between ${
+            activeView === "tasks"
+              ? "text-accent-primary bg-bg-tertiary"
+              : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+          }`}
+        >
+          <span>Tasks</span>
+          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-[2px] bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/30">
+            WIP
+          </span>
+        </button>
+
         {/* Cost */}
         <button
           onClick={() =>

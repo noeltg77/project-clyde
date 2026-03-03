@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@supabase/supabase-js": "^2.97.0",
     "lucide-react": "^0.575.0",
     "motion": "^12.34.3",

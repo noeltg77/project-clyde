@@ -532,3 +532,153 @@ async def get_recent_message_contents(
         .execute()
     )
     return result.data
+
+
+# --- Task Board (Kanban) ---
+
+
+async def get_task_columns() -> list[dict]:
+    """List all task columns ordered by position."""
+    client = get_supabase()
+    result = (
+        client.table("task_columns")
+        .select("*")
+        .order("position")
+        .execute()
+    )
+    return result.data
+
+
+async def create_task_column(name: str, position: int) -> dict:
+    """Create a new task column."""
+    client = get_supabase()
+    result = (
+        client.table("task_columns")
+        .insert({"name": name, "position": position})
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+async def update_task_column(column_id: str, **fields) -> dict:
+    """Update a task column's name and/or position."""
+    client = get_supabase()
+    update_data = {k: v for k, v in fields.items() if v is not None}
+    if not update_data:
+        return {}
+    result = (
+        client.table("task_columns")
+        .update(update_data)
+        .eq("id", column_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+async def delete_task_column(column_id: str) -> bool:
+    """Delete a task column (tasks in the column are cascade-deleted)."""
+    client = get_supabase()
+    result = (
+        client.table("task_columns")
+        .delete()
+        .eq("id", column_id)
+        .execute()
+    )
+    return len(result.data) > 0
+
+
+async def get_tasks() -> list[dict]:
+    """Get all tasks ordered by position."""
+    client = get_supabase()
+    result = (
+        client.table("tasks")
+        .select("*")
+        .order("position")
+        .execute()
+    )
+    return result.data
+
+
+async def create_task(
+    title: str,
+    column_id: str,
+    description: str = "",
+    assignee_type: str | None = None,
+    assignee_id: str | None = None,
+    assignee_name: str | None = None,
+    linked_docs: list[dict] | None = None,
+    session_id: str | None = None,
+) -> dict:
+    """Create a new task card."""
+    client = get_supabase()
+    # Auto-calculate position: append to end of column
+    existing = (
+        client.table("tasks")
+        .select("position")
+        .eq("column_id", column_id)
+        .order("position", desc=True)
+        .limit(1)
+        .execute()
+    )
+    next_pos = (existing.data[0]["position"] + 1) if existing.data else 0
+
+    row: dict[str, Any] = {
+        "title": title,
+        "description": description,
+        "column_id": column_id,
+        "position": next_pos,
+        "linked_docs": linked_docs or [],
+    }
+    if assignee_type:
+        row["assignee_type"] = assignee_type
+    if assignee_id:
+        row["assignee_id"] = assignee_id
+    if assignee_name:
+        row["assignee_name"] = assignee_name
+    if session_id:
+        row["session_id"] = session_id
+    result = client.table("tasks").insert(row).execute()
+    return result.data[0] if result.data else {}
+
+
+async def update_task(task_id: str, **fields) -> dict:
+    """Partial update of a task (title, description, column_id, position, assignee, linked_docs)."""
+    client = get_supabase()
+    allowed = {
+        "title", "description", "column_id", "position",
+        "assignee_type", "assignee_id", "assignee_name",
+        "linked_docs", "session_id",
+    }
+    update_data = {k: v for k, v in fields.items() if k in allowed}
+    if not update_data:
+        return {}
+    result = (
+        client.table("tasks")
+        .update(update_data)
+        .eq("id", task_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+async def delete_task(task_id: str) -> bool:
+    """Delete a task by ID."""
+    client = get_supabase()
+    result = (
+        client.table("tasks")
+        .delete()
+        .eq("id", task_id)
+        .execute()
+    )
+    return len(result.data) > 0
+
+
+async def reorder_tasks(updates: list[dict]) -> bool:
+    """Batch-update task positions. Each item: {id, column_id, position}."""
+    client = get_supabase()
+    for item in updates:
+        client.table("tasks").update({
+            "column_id": item["column_id"],
+            "position": item["position"],
+        }).eq("id", item["id"]).execute()
+    return True

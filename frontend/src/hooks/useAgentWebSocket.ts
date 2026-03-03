@@ -18,9 +18,16 @@ export type WebSocketMessage = {
     | "session_history"
     | "session_title_update"
     | "session_created"
+    | "background_session_created"
     | "proactive_insight"
     | "activity_history"
-    | "cancel_confirmed";
+    | "cancel_confirmed"
+    | "task_created"
+    | "task_updated"
+    | "task_deleted"
+    | "task_column_created"
+    | "task_column_updated"
+    | "task_column_deleted";
   data: Record<string, unknown>;
 };
 

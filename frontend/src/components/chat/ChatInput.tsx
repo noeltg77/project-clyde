@@ -18,7 +18,7 @@ type Attachment = {
 };
 
 type ChatInputProps = {
-  onSend: (message: string, fileRefs?: string[], folderContext?: string) => void;
+  onSend: (message: string, fileRefs?: string[], folderContext?: string, tasksEnabled?: boolean) => void;
   onCancel: () => void;
 };
 
@@ -42,6 +42,9 @@ export function ChatInput({ onSend, onCancel }: ChatInputProps) {
 
   // Folder context state (set via FileBrowser "Start Chat" button)
   const [folderContext, setFolderContext] = useState<string | null>(null);
+
+  // Tasks toggle state
+  const [tasksEnabled, setTasksEnabled] = useState(false);
 
   // Fetch file tree on mount for autocomplete
   useEffect(() => {
@@ -222,7 +225,8 @@ export function ChatInput({ onSend, onCancel }: ChatInputProps) {
     onSend(
       trimmed || "(see attached files)",
       refs.length > 0 ? refs : undefined,
-      folderContext ?? undefined
+      folderContext ?? undefined,
+      tasksEnabled || undefined
     );
     setValue("");
     setFileRefs([]);
@@ -231,7 +235,7 @@ export function ChatInput({ onSend, onCancel }: ChatInputProps) {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, isStreaming, isConnected, onSend, fileRefs, attachments, allFiles, folderContext]);
+  }, [value, isStreaming, isConnected, onSend, fileRefs, attachments, allFiles, folderContext, tasksEnabled]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Handle file picker keyboard navigation
@@ -492,6 +496,39 @@ export function ChatInput({ onSend, onCancel }: ChatInputProps) {
               >
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
               </svg>
+            )}
+          </button>
+
+          {/* Tasks toggle button */}
+          <button
+            onClick={() => setTasksEnabled(!tasksEnabled)}
+            disabled={!isConnected}
+            title={tasksEnabled ? "Disable task creation" : "Enable task creation"}
+            className={`relative p-3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+              tasksEnabled
+                ? "text-accent-primary"
+                : "text-text-secondary hover:text-accent-primary"
+            }`}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3.5 5.5L5 7l2.5-2.5" />
+              <path d="M3.5 11.5L5 13l2.5-2.5" />
+              <path d="M3.5 17.5L5 19l2.5-2.5" />
+              <line x1="11" y1="6" x2="20" y2="6" />
+              <line x1="11" y1="12" x2="20" y2="12" />
+              <line x1="11" y1="18" x2="20" y2="18" />
+            </svg>
+            {tasksEnabled && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent-primary" />
             )}
           </button>
 
