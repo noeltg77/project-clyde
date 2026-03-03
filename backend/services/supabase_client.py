@@ -17,6 +17,13 @@ def get_supabase() -> Client:
     return _client
 
 
+def reset_client() -> None:
+    """Clear the cached Supabase client so the next call to get_supabase()
+    creates a fresh one with the current environment variables."""
+    global _client
+    _client = None
+
+
 # --- Chat Sessions ---
 
 

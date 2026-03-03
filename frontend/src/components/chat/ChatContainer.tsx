@@ -44,6 +44,7 @@ export function ChatContainer() {
   const clearActivityEvents = useAgentStore((s) => s.clearActivityEvents);
   const setAgents = useAgentStore((s) => s.setAgents);
   const setAgentActive = useAgentStore((s) => s.setAgentActive);
+  const clearActiveAgents = useAgentStore((s) => s.clearActiveAgents);
 
   // Insight store actions
   const addInsight = useInsightStore((s) => s.addInsight);
@@ -589,11 +590,12 @@ export function ChatContainer() {
       }
       streamingMsgId.current = null;
       setStreaming(false);
+      clearActiveAgents();
     };
     window.addEventListener("cancel-request", handleCancelEvent);
     return () =>
       window.removeEventListener("cancel-request", handleCancelEvent);
-  }, [updateMessage, appendToMessage, setStreaming]);
+  }, [updateMessage, appendToMessage, setStreaming, clearActiveAgents]);
 
   // Listen for insight-action events from InsightsDashboard
   useEffect(() => {

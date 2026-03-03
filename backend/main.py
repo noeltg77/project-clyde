@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import shutil
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -44,6 +44,7 @@ from services.supabase_client import (
     get_all_insights,
     update_insight_status,
     delete_insight,
+    reset_client as reset_supabase_client,
 )
 from services.embeddings import generate_embedding, generate_query_embedding
 from services.registry import load_registry, save_registry
@@ -954,7 +955,7 @@ async def get_env_vars():
 
 
 @app.patch("/api/env-vars")
-async def update_env_vars(body: dict):
+async def update_env_vars(body: dict, background_tasks: BackgroundTasks):
     """Update whitelisted environment variables in .env.local."""
     try:
         # Filter to only whitelisted keys
@@ -998,11 +999,26 @@ async def update_env_vars(body: dict):
             elif key in os.environ:
                 del os.environ[key]
 
+        # Reset cached service clients so they pick up new credentials
+        reset_supabase_client()
+
         logger.info(f"[API] Updated env vars: {list(updates.keys())}")
-        return {"success": True}
+
+        # Schedule a backend restart by touching main.py to trigger uvicorn --reload.
+        # The 0.5s delay ensures the HTTP response is fully sent before the restart.
+        background_tasks.add_task(_trigger_restart)
+
+        return {"success": True, "restarting": True}
     except Exception as e:
         logger.error(f"[API] Update env vars failed: {e}")
         return {"error": str(e)}
+
+
+async def _trigger_restart():
+    """Touch main.py after a short delay to trigger uvicorn's --reload."""
+    await asyncio.sleep(0.5)
+    logger.info("[API] Triggering backend restart (touching main.py for uvicorn --reload)...")
+    Path(__file__).touch()
 
 
 # --- Agent Management REST (Phase 5D) ---

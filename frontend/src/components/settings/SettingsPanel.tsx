@@ -228,16 +228,53 @@ function SystemTab() {
       const data = await res.json();
       if (data.success) {
         setEnvVars({ ...envVars, ...changes });
-        setSaveResult("Saved. Restart services to apply changes.");
+
+        if (data.restarting) {
+          // Backend is restarting — poll health until it's back
+          setSaveResult("Saved — restarting backend...");
+          setSaving(false);
+          await pollBackendHealth();
+        } else {
+          setSaveResult("Saved successfully.");
+          setSaving(false);
+          setTimeout(() => setSaveResult(null), 5000);
+        }
       } else {
         setSaveResult(`Error: ${data.error || "Failed to save"}`);
+        setSaving(false);
+        setTimeout(() => setSaveResult(null), 5000);
       }
     } catch {
       setSaveResult("Error: Could not reach backend");
-    } finally {
       setSaving(false);
       setTimeout(() => setSaveResult(null), 5000);
     }
+  }
+
+  async function pollBackendHealth() {
+    const maxAttempts = 15;
+    const intervalMs = 1500;
+
+    // Wait briefly for uvicorn to begin its restart
+    await new Promise((r) => setTimeout(r, 1000));
+
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const res = await fetch(`${API_URL}/health`, { cache: "no-store" });
+        if (res.ok) {
+          setSaveResult("Backend restarted successfully.");
+          setBackendOk(true);
+          setTimeout(() => setSaveResult(null), 5000);
+          return;
+        }
+      } catch {
+        // Expected — backend is still restarting
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+
+    setSaveResult("Backend may still be restarting. Refresh if needed.");
+    setTimeout(() => setSaveResult(null), 8000);
   }
 
   async function handleExport() {
@@ -350,7 +387,9 @@ function SystemTab() {
             className={`text-[10px] mt-1.5 text-center ${
               saveResult.startsWith("Error")
                 ? "text-error"
-                : "text-accent-tertiary"
+                : saveResult.includes("restarting")
+                  ? "text-amber-400"
+                  : "text-accent-tertiary"
             }`}
           >
             {saveResult}
