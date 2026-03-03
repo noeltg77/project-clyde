@@ -47,6 +47,7 @@ export function Sidebar() {
   const pendingInsightCount = useInsightStore((s) => s.pendingCount);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [navCollapsed, setNavCollapsed] = useState(false);
 
   const handleNewChat = useCallback(() => {
     setActiveView("chat");
@@ -241,26 +242,63 @@ export function Sidebar() {
 
         {/* Connection status */}
         <div className="px-4 py-2 border-t border-border">
-          <div className="flex items-center gap-1.5">
-            <div className="relative">
-              <div
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isConnected ? "bg-accent-tertiary" : "bg-error"
-                }`}
-              />
-              {!isConnected && (
-                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-error animate-ping" />
-              )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isConnected ? "bg-accent-tertiary" : "bg-error"
+                  }`}
+                />
+                {!isConnected && (
+                  <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-error animate-ping" />
+                )}
+              </div>
+              <span className="text-[10px] text-text-secondary">
+                {isConnected ? "Connected" : "Disconnected"}
+              </span>
             </div>
-            <span className="text-[10px] text-text-secondary">
-              {isConnected ? "Connected" : "Disconnected"}
-            </span>
+            <button
+              onClick={() => setNavCollapsed((c) => !c)}
+              className="w-5 h-5 flex items-center justify-center rounded-[2px] text-text-secondary hover:text-accent-primary hover:bg-bg-tertiary transition-colors"
+              title={navCollapsed ? "Show navigation" : "Hide navigation"}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {navCollapsed ? (
+                  <>
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </>
+                ) : (
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                )}
+              </svg>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="p-4 space-y-1 border-t border-border">
+      {/* Navigation — collapsible */}
+      <div
+        className="grid border-t border-border transition-[grid-template-rows] duration-300 ease-in-out"
+        style={{ gridTemplateRows: navCollapsed ? "0fr" : "1fr" }}
+      >
+        <nav className="overflow-hidden p-4 space-y-1"
+          style={{
+            paddingTop: navCollapsed ? 0 : undefined,
+            paddingBottom: navCollapsed ? 0 : undefined,
+            transition: "padding 300ms ease-in-out",
+          }}
+        >
         {/* Chat */}
         <button
           onClick={() => setActiveView("chat")}
@@ -391,7 +429,8 @@ export function Sidebar() {
             </span>
           )}
         </button>
-      </nav>
+        </nav>
+      </div>
     </aside>
   );
 }
