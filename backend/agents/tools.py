@@ -1445,6 +1445,321 @@ async def trigger_analysis_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Failed to trigger analysis: {str(e)}")
 
 
+# ─── Task Board Tools (Phase 7) ───────────────────────────────────
+
+
+@tool(
+    "list_task_columns",
+    "List all kanban columns on the task board, ordered by position. "
+    "Returns column IDs, names, and positions.",
+    {},
+)
+async def list_task_columns_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List all task board columns."""
+    try:
+        from services.supabase_client import get_task_columns
+
+        columns = await get_task_columns()
+        if not columns:
+            return _text_response("No columns on the task board yet.")
+        lines = [f"Task board columns ({len(columns)}):\n"]
+        for col in columns:
+            lines.append(f"  • {col['name']} (id: {col['id']}, position: {col['position']})")
+        return _text_response("\n".join(lines))
+    except Exception as e:
+        return _error_response(f"Failed to list task columns: {str(e)}")
+
+
+@tool(
+    "create_task_column",
+    "Create a new column on the task board. Columns represent workflow stages "
+    "(e.g. 'To Do', 'In Progress', 'Done').",
+    {
+        "name": {
+            "type": str,
+            "description": "The column name (e.g. 'To Do', 'In Progress', 'Review', 'Done').",
+            "required": True,
+        },
+        "position": {
+            "type": int,
+            "description": "Position index for ordering (0-based). Defaults to appending at end.",
+            "required": False,
+        },
+    },
+)
+async def create_task_column_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new task board column."""
+    try:
+        from services.supabase_client import get_task_columns, create_task_column
+
+        name = args.get("name", "New Column").strip()
+        if not name:
+            return _error_response("Column name is required.")
+
+        # Default position: append to end
+        if "position" in args:
+            position = int(args["position"])
+        else:
+            existing = await get_task_columns()
+            position = len(existing)
+
+        col = await create_task_column(name, position)
+        return _text_response(
+            f"Created column '{col.get('name', name)}' (id: {col.get('id', 'unknown')}, position: {position})."
+        )
+    except Exception as e:
+        return _error_response(f"Failed to create task column: {str(e)}")
+
+
+@tool(
+    "delete_task_column",
+    "Delete a column from the task board. This also deletes all tasks in the column.",
+    {
+        "column_id": {
+            "type": str,
+            "description": "The ID of the column to delete. Use list_task_columns to find IDs.",
+            "required": True,
+        },
+    },
+)
+async def delete_task_column_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete a task board column."""
+    try:
+        from services.supabase_client import delete_task_column
+
+        column_id = args.get("column_id", "").strip()
+        if not column_id:
+            return _error_response("column_id is required.")
+
+        deleted = await delete_task_column(column_id)
+        if not deleted:
+            return _error_response(f"Column not found: {column_id}")
+        return _text_response(f"Deleted column {column_id} and all its tasks.")
+    except Exception as e:
+        return _error_response(f"Failed to delete task column: {str(e)}")
+
+
+@tool(
+    "list_tasks",
+    "List all tasks on the task board. Optionally filter by column ID. "
+    "Returns task titles, descriptions, assignees, and column placement.",
+    {
+        "column_id": {
+            "type": str,
+            "description": "Optional column ID to filter tasks by. Omit for all tasks.",
+            "required": False,
+        },
+    },
+)
+async def list_tasks_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List tasks, optionally filtered by column."""
+    try:
+        from services.supabase_client import get_tasks, get_task_columns
+
+        tasks = await get_tasks()
+        columns = await get_task_columns()
+        col_map = {c["id"]: c["name"] for c in columns}
+
+        column_filter = args.get("column_id", "").strip()
+        if column_filter:
+            tasks = [t for t in tasks if t.get("column_id") == column_filter]
+
+        if not tasks:
+            return _text_response("No tasks found.")
+
+        lines = [f"Tasks ({len(tasks)}):\n"]
+        for t in tasks:
+            col_name = col_map.get(t.get("column_id", ""), "Unknown")
+            assignee = t.get("assignee_name") or "Unassigned"
+            lines.append(
+                f"  • [{col_name}] {t['title']} (id: {t['id']})\n"
+                f"    Assignee: {assignee}"
+            )
+            if t.get("description"):
+                desc = t["description"][:100] + ("..." if len(t["description"]) > 100 else "")
+                lines.append(f"    Description: {desc}")
+        return _text_response("\n".join(lines))
+    except Exception as e:
+        return _error_response(f"Failed to list tasks: {str(e)}")
+
+
+@tool(
+    "create_task",
+    "Create a new task on the task board. Tasks represent actionable work items. "
+    "Assign to agents, link documents, and place in the appropriate column.",
+    {
+        "title": {
+            "type": str,
+            "description": "The task title — clear and actionable.",
+            "required": True,
+        },
+        "column_id": {
+            "type": str,
+            "description": "Which column to place the task in. Use list_task_columns to find IDs.",
+            "required": True,
+        },
+        "description": {
+            "type": str,
+            "description": "Detailed description of the task.",
+            "required": False,
+        },
+        "assignee_type": {
+            "type": str,
+            "description": "Type of assignee: 'agent', 'user', or 'clyde'.",
+            "required": False,
+        },
+        "assignee_id": {
+            "type": str,
+            "description": "The ID of the assigned agent (from the registry), 'user', or Clyde's ID.",
+            "required": False,
+        },
+        "assignee_name": {
+            "type": str,
+            "description": "Display name of the assignee.",
+            "required": False,
+        },
+        "linked_docs": {
+            "type": str,
+            "description": "JSON array of linked documents, each with 'path' and 'name' fields. E.g. '[{\"path\": \"/working/outputs/report.md\", \"name\": \"report.md\"}]'",
+            "required": False,
+        },
+    },
+)
+async def create_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new task on the board."""
+    try:
+        from services.supabase_client import create_task
+
+        title = args.get("title", "").strip()
+        if not title:
+            return _error_response("Task title is required.")
+
+        column_id = args.get("column_id", "").strip()
+        if not column_id:
+            return _error_response("column_id is required.")
+
+        # Parse linked_docs from JSON string if provided
+        linked_docs = None
+        if args.get("linked_docs"):
+            try:
+                linked_docs = json.loads(args["linked_docs"])
+            except json.JSONDecodeError:
+                return _error_response("linked_docs must be a valid JSON array.")
+
+        task = await create_task(
+            title=title,
+            column_id=column_id,
+            description=args.get("description", ""),
+            assignee_type=args.get("assignee_type"),
+            assignee_id=args.get("assignee_id"),
+            assignee_name=args.get("assignee_name"),
+            linked_docs=linked_docs,
+        )
+        return _text_response(
+            f"Created task '{task.get('title', title)}' (id: {task.get('id', 'unknown')}) "
+            f"in column {column_id}."
+        )
+    except Exception as e:
+        return _error_response(f"Failed to create task: {str(e)}")
+
+
+@tool(
+    "update_task",
+    "Update an existing task — change its title, description, column, assignee, "
+    "or linked documents. Also use this to move a task between columns.",
+    {
+        "task_id": {
+            "type": str,
+            "description": "The ID of the task to update.",
+            "required": True,
+        },
+        "title": {
+            "type": str,
+            "description": "New title for the task.",
+            "required": False,
+        },
+        "description": {
+            "type": str,
+            "description": "New description for the task.",
+            "required": False,
+        },
+        "column_id": {
+            "type": str,
+            "description": "Move the task to a different column by specifying the target column ID.",
+            "required": False,
+        },
+        "assignee_type": {
+            "type": str,
+            "description": "Type of assignee: 'agent', 'user', or 'clyde'.",
+            "required": False,
+        },
+        "assignee_id": {
+            "type": str,
+            "description": "The ID of the assigned agent.",
+            "required": False,
+        },
+        "assignee_name": {
+            "type": str,
+            "description": "Display name of the assignee.",
+            "required": False,
+        },
+    },
+)
+async def update_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update an existing task."""
+    try:
+        from services.supabase_client import update_task
+
+        task_id = args.get("task_id", "").strip()
+        if not task_id:
+            return _error_response("task_id is required.")
+
+        fields = {}
+        for key in ["title", "description", "column_id", "assignee_type", "assignee_id", "assignee_name"]:
+            if key in args and args[key] is not None:
+                fields[key] = args[key]
+
+        if not fields:
+            return _error_response("No fields to update. Provide at least one field to change.")
+
+        task = await update_task(task_id, **fields)
+        if not task:
+            return _error_response(f"Task not found: {task_id}")
+        return _text_response(
+            f"Updated task '{task.get('title', task_id)}' — changed: {', '.join(fields.keys())}."
+        )
+    except Exception as e:
+        return _error_response(f"Failed to update task: {str(e)}")
+
+
+@tool(
+    "delete_task",
+    "Delete a task from the task board.",
+    {
+        "task_id": {
+            "type": str,
+            "description": "The ID of the task to delete. Use list_tasks to find IDs.",
+            "required": True,
+        },
+    },
+)
+async def delete_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete a task."""
+    try:
+        from services.supabase_client import delete_task
+
+        task_id = args.get("task_id", "").strip()
+        if not task_id:
+            return _error_response("task_id is required.")
+
+        deleted = await delete_task(task_id)
+        if not deleted:
+            return _error_response(f"Task not found: {task_id}")
+        return _text_response(f"Deleted task {task_id}.")
+    except Exception as e:
+        return _error_response(f"Failed to delete task: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -1488,5 +1803,13 @@ registry_mcp_server = create_sdk_mcp_server(
         # Phase 6: Proactive Insights
         get_insights_tool,
         trigger_analysis_tool,
+        # Phase 7: Task Board
+        list_task_columns_tool,
+        create_task_column_tool,
+        delete_task_column_tool,
+        list_tasks_tool,
+        create_task_tool,
+        update_task_tool,
+        delete_task_tool,
     ],
 )

@@ -207,6 +207,59 @@ You can set up file watchers that trigger actions when files change:
 - **assign_mcp_server**: Give an agent access to an external MCP server. Parameters:
   - `agent_name`, `server_name`, `server_type` ("stdio"), `command`
 
+## Task Board Management
+
+You have access to a kanban-style task board visible in the UI. Use it to break down work into trackable cards, assign tasks to agents (or yourself), and keep the user informed of progress. The board is the user's primary way to visualise what's happening across the team.
+
+### Task Board Tools
+
+- **list_task_columns**: List all columns on the board (e.g. "To Do", "In Progress", "Done"). Returns IDs, names, and positions.
+
+- **create_task_column**: Create a new column. Parameters:
+  - `name` (required): Column name (e.g. "Backlog", "In Progress", "Review", "Done")
+  - `position` (optional): Position index. Defaults to appending at end.
+
+- **delete_task_column**: Delete a column and all tasks within it. Pass `column_id`.
+
+- **list_tasks**: List all tasks on the board. Optional `column_id` filter to show tasks in a specific column only.
+
+- **create_task**: Create a new task card. Parameters:
+  - `title` (required): Clear, actionable task title
+  - `column_id` (required): Which column to place it in
+  - `description` (optional): Detailed description of the work
+  - `assignee_type` (optional): "agent", "user", or "clyde"
+  - `assignee_id` (optional): The agent's registry ID, "user", or your own ID
+  - `assignee_name` (optional): Display name for the assignee
+  - `linked_docs` (optional): JSON array of `{"path": "...", "name": "..."}` for related files
+
+- **update_task**: Update any field on an existing task — title, description, assignee, or column. Use this to move tasks between columns (e.g. from "To Do" to "In Progress"). Pass `task_id` plus any fields to change.
+
+- **delete_task**: Remove a completed or cancelled task. Pass `task_id`.
+
+### When to Use the Task Board
+
+**Breaking down complex requests:**
+When a user gives you a multi-step request, create tasks for each step. This gives the user visibility into your plan and progress.
+
+**Tracking delegated work:**
+When you delegate to a subagent, create a task assigned to them. Move it to "In Progress" when they start, and "Done" when complete.
+
+**Keeping the user informed:**
+The task board is always visible. Rather than just narrating your plan, put it on the board so the user can track progress in real time.
+
+**Setting up a new project:**
+If the board has no columns, set up a sensible default workflow (e.g. "To Do", "In Progress", "Review", "Done") before creating tasks.
+
+### Best Practices
+
+- Always check `list_task_columns` before creating tasks — set up columns first if the board is empty
+- Write task titles as clear actions: "Draft social media copy for launch" not "Social media"
+- Assign tasks to the specific agent who will do the work
+- Move tasks between columns as work progresses — don't leave everything in "To Do"
+- Link relevant output files to tasks using `linked_docs` so the user can find deliverables
+- Delete or archive tasks once complete to keep the board clean
+- When a user says "what's the status?" — reference the task board
+
 ## When to Create a Subagent
 
 Create a new subagent when:
