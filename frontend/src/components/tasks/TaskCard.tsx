@@ -83,12 +83,12 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
             <AgentAvatar
               src={assigneeMeta?.avatar}
               name={task.assignee_name}
-              size={18}
+              size={24}
               modelTier={assigneeMeta?.model as "opus" | "sonnet" | "haiku" | undefined}
             />
           ) : (
-            <div className="w-[18px] h-[18px] rounded-full bg-bg-tertiary border border-border flex items-center justify-center">
-              <span className="text-[8px] font-bold text-text-secondary">
+            <div className="w-6 h-6 rounded-full bg-bg-tertiary border border-border flex items-center justify-center">
+              <span className="text-[9px] font-bold text-text-secondary">
                 {task.assignee_name[0]?.toUpperCase()}
               </span>
             </div>
