@@ -45,6 +45,7 @@ export function ChatContainer() {
   const setActivityEvents = useAgentStore((s) => s.setActivityEvents);
   const clearActivityEvents = useAgentStore((s) => s.clearActivityEvents);
   const setAgents = useAgentStore((s) => s.setAgents);
+  const setOrchestrator = useAgentStore((s) => s.setOrchestrator);
   const setAgentActive = useAgentStore((s) => s.setAgentActive);
   const clearActiveAgents = useAgentStore((s) => s.clearActiveAgents);
 
@@ -570,6 +571,21 @@ export function ChatContainer() {
             })
           );
           setAgents(agents);
+
+          // Populate orchestrator (Clyde) in the store
+          const orch = data.orchestrator;
+          if (orch && orch.id) {
+            setOrchestrator({
+              registryId: orch.id,
+              name: orch.name || "Clyde",
+              role: orch.role || "CEO",
+              model: orch.model || "opus",
+              avatar: orch.avatar || "",
+              status: orch.status || "active",
+              tools: orch.tools || [],
+              skills: orch.skills || [],
+            });
+          }
         }
       } catch (err) {
         console.error("Failed to fetch agents:", err);
@@ -578,7 +594,7 @@ export function ChatContainer() {
 
     fetchSessions();
     fetchAgents();
-  }, [setSessions, setAgents]);
+  }, [setSessions, setAgents, setOrchestrator]);
 
   // Connect to WebSocket on mount (new session) — runs once
   useEffect(() => {
