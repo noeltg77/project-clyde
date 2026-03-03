@@ -246,7 +246,7 @@ export function TaskBoard() {
     [editingTask, updateTask]
   );
 
-  // Delete task
+  // Delete task (from modal)
   const handleDeleteTask = useCallback(async () => {
     if (!editingTask) return;
     try {
@@ -260,6 +260,21 @@ export function TaskBoard() {
     setModalOpen(false);
     setEditingTask(null);
   }, [editingTask, removeTask]);
+
+  // Delete task by ID (from card trash icon)
+  const handleDeleteTaskById = useCallback(
+    async (taskId: string) => {
+      try {
+        await fetch(`${API_URL}/api/tasks/${taskId}`, {
+          method: "DELETE",
+        });
+        removeTask(taskId);
+      } catch (err) {
+        console.error("Failed to delete task:", err);
+      }
+    },
+    [removeTask]
+  );
 
   // Add column
   const handleAddColumn = useCallback(async () => {
@@ -443,6 +458,7 @@ export function TaskBoard() {
                         setEditingTask(task);
                         setModalOpen(true);
                       }}
+                      onDelete={handleDeleteTaskById}
                     />
                   </div>
                 ))}
