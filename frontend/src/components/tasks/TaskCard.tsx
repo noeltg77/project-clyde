@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
+import { useAgentStore } from "@/stores/agent-store-provider";
 import type { Task } from "@/stores/task-store";
 
 function timeAgo(dateStr: string): string {
@@ -26,6 +28,37 @@ type TaskCardProps = {
 };
 
 export function TaskCard({ task, onClick }: TaskCardProps) {
+  const orchestrator = useAgentStore((s) => s.orchestrator);
+  const agents = useAgentStore((s) => s.agents);
+
+  // Look up the avatar and model tier from the agent store
+  const assigneeMeta = useMemo(() => {
+    if (!task.assignee_name) return null;
+
+    // Check orchestrator (Clyde)
+    if (
+      task.assignee_type === "clyde" ||
+      orchestrator?.name === task.assignee_name
+    ) {
+      return {
+        avatar: orchestrator?.avatar,
+        model: orchestrator?.model || "opus",
+      };
+    }
+
+    // Check registered agents
+    const agent = agents.find(
+      (a) =>
+        a.name === task.assignee_name ||
+        a.registryId === task.assignee_id
+    );
+    if (agent) {
+      return { avatar: agent.avatar, model: agent.model || "sonnet" };
+    }
+
+    return null;
+  }, [task.assignee_name, task.assignee_id, task.assignee_type, orchestrator, agents]);
+
   return (
     <button
       onClick={onClick}
@@ -46,10 +79,12 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       {/* Assignee */}
       {task.assignee_name && (
         <div className="mt-2 flex items-center gap-1.5">
-          {task.assignee_type === "agent" ? (
+          {task.assignee_type === "agent" || task.assignee_type === "clyde" ? (
             <AgentAvatar
+              src={assigneeMeta?.avatar}
               name={task.assignee_name}
               size={18}
+              modelTier={assigneeMeta?.model as "opus" | "sonnet" | "haiku" | undefined}
             />
           ) : (
             <div className="w-[18px] h-[18px] rounded-full bg-bg-tertiary border border-border flex items-center justify-center">
