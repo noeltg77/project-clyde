@@ -1,12 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  DragDropContext,
-  Droppable,
-  Draggable,
-  type DropResult,
-} from "@hello-pangea/dnd";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { AnimatePresence } from "motion/react";
 import { useTaskStore } from "@/stores/task-store-provider";
 import type { Task, TaskColumn } from "@/stores/task-store";
@@ -40,6 +34,11 @@ export function TaskBoard() {
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
   const [editingColumnName, setEditingColumnName] = useState("");
 
+  // Drag state
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
+  const dragCounter = useRef<Record<string, number>>({});
+
   // Fetch data on mount
   useEffect(() => {
     async function fetchData() {
@@ -71,55 +70,107 @@ export function TaskBoard() {
     [tasks]
   );
 
-  // Drag and drop handler
-  const handleDragEnd = useCallback(
-    async (result: DropResult) => {
-      const { draggableId, source, destination } = result;
-      if (!destination) return;
-      if (
-        source.droppableId === destination.droppableId &&
-        source.index === destination.index
-      )
-        return;
+  // --- Native drag and drop handlers ---
 
-      const newColumnId = destination.droppableId;
-      const newPosition = destination.index;
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, taskId: string) => {
+      setDraggingTaskId(taskId);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", taskId);
+      // Make the drag image slightly transparent
+      if (e.currentTarget instanceof HTMLElement) {
+        e.currentTarget.style.opacity = "0.5";
+      }
+    },
+    []
+  );
+
+  const handleDragEnd = useCallback(
+    (e: React.DragEvent) => {
+      if (e.currentTarget instanceof HTMLElement) {
+        e.currentTarget.style.opacity = "1";
+      }
+      setDraggingTaskId(null);
+      setDragOverColumnId(null);
+      dragCounter.current = {};
+    },
+    []
+  );
+
+  const handleColumnDragEnter = useCallback(
+    (e: React.DragEvent, columnId: string) => {
+      e.preventDefault();
+      dragCounter.current[columnId] = (dragCounter.current[columnId] || 0) + 1;
+      setDragOverColumnId(columnId);
+    },
+    []
+  );
+
+  const handleColumnDragLeave = useCallback(
+    (columnId: string) => {
+      dragCounter.current[columnId] = (dragCounter.current[columnId] || 0) - 1;
+      if (dragCounter.current[columnId] <= 0) {
+        dragCounter.current[columnId] = 0;
+        setDragOverColumnId((prev) => (prev === columnId ? null : prev));
+      }
+    },
+    []
+  );
+
+  const handleColumnDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const handleColumnDrop = useCallback(
+    async (e: React.DragEvent, targetColumnId: string) => {
+      e.preventDefault();
+      setDragOverColumnId(null);
+      dragCounter.current = {};
+
+      const taskId = e.dataTransfer.getData("text/plain");
+      if (!taskId) return;
+
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+
+      // Already in this column? Do nothing
+      if (task.column_id === targetColumnId) {
+        setDraggingTaskId(null);
+        return;
+      }
+
+      const sourceColumnId = task.column_id;
+
+      // Calculate new position: append to end of target column
+      const targetTasks = tasks
+        .filter((t) => t.column_id === targetColumnId)
+        .sort((a, b) => a.position - b.position);
+      const newPosition = targetTasks.length;
 
       // Optimistic update
-      moveTask(draggableId, newColumnId, newPosition);
+      moveTask(taskId, targetColumnId, newPosition);
+      setDraggingTaskId(null);
 
-      // Build reorder payload for all affected tasks
+      // Build reorder payload
+      const updates: { id: string; column_id: string; position: number }[] = [];
+
+      // Reorder target column (append moved task)
       const destTasks = tasks
-        .filter(
-          (t) => t.column_id === newColumnId && t.id !== draggableId
-        )
+        .filter((t) => t.column_id === targetColumnId && t.id !== taskId)
         .sort((a, b) => a.position - b.position);
+      destTasks.push({ id: taskId } as Task);
+      destTasks.forEach((t, idx) => {
+        updates.push({ id: t.id, column_id: targetColumnId, position: idx });
+      });
 
-      // Insert the moved task at the new position
-      destTasks.splice(newPosition, 0, { id: draggableId } as Task);
-
-      const updates = destTasks.map((t, idx) => ({
-        id: t.id,
-        column_id: newColumnId,
-        position: idx,
-      }));
-
-      // If moving across columns, also reorder source column
-      if (source.droppableId !== destination.droppableId) {
-        const srcTasks = tasks
-          .filter(
-            (t) =>
-              t.column_id === source.droppableId && t.id !== draggableId
-          )
-          .sort((a, b) => a.position - b.position);
-        srcTasks.forEach((t, idx) => {
-          updates.push({
-            id: t.id,
-            column_id: source.droppableId,
-            position: idx,
-          });
-        });
-      }
+      // Reorder source column (fill gap)
+      const srcTasks = tasks
+        .filter((t) => t.column_id === sourceColumnId && t.id !== taskId)
+        .sort((a, b) => a.position - b.position);
+      srcTasks.forEach((t, idx) => {
+        updates.push({ id: t.id, column_id: sourceColumnId, position: idx });
+      });
 
       try {
         await fetch(`${API_URL}/api/tasks/reorder`, {
@@ -304,144 +355,130 @@ export function TaskBoard() {
 
       {/* Board */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden">
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 p-6 h-full min-w-min">
-            {columns.map((column) => (
-              <div
-                key={column.id}
-                className="flex flex-col w-72 flex-shrink-0 bg-bg-primary border border-border rounded-[2px]"
-              >
-                {/* Column header */}
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-                  {editingColumnId === column.id ? (
-                    <input
-                      value={editingColumnName}
-                      onChange={(e) => setEditingColumnName(e.target.value)}
-                      onBlur={() =>
-                        handleRenameColumn(column.id, editingColumnName)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter")
-                          handleRenameColumn(column.id, editingColumnName);
-                        if (e.key === "Escape") setEditingColumnId(null);
-                      }}
-                      autoFocus
-                      className="flex-1 px-1 py-0 text-xs font-semibold bg-transparent text-text-primary border-b border-accent-primary focus:outline-none"
-                    />
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setEditingColumnId(column.id);
-                        setEditingColumnName(column.name);
-                      }}
-                      className="text-xs font-semibold text-text-primary uppercase tracking-wider hover:text-accent-primary transition-colors"
-                    >
-                      {column.name}
-                    </button>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-text-secondary/60">
-                      {getColumnTasks(column.id).length}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteColumn(column.id)}
-                      className="text-text-secondary/40 hover:text-error transition-colors"
-                      title="Delete column"
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Droppable area */}
-                <Droppable droppableId={column.id}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`flex-1 overflow-y-auto p-2 space-y-2 min-h-[60px] transition-colors ${
-                        snapshot.isDraggingOver
-                          ? "bg-accent-primary/5"
-                          : ""
-                      }`}
-                    >
-                      {getColumnTasks(column.id).map((task, index) => (
-                        <Draggable
-                          key={task.id}
-                          draggableId={task.id}
-                          index={index}
-                        >
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`${
-                                snapshot.isDragging
-                                  ? "opacity-90 shadow-lg"
-                                  : ""
-                              }`}
-                            >
-                              <TaskCard
-                                task={task}
-                                onClick={() => {
-                                  setEditingTask(task);
-                                  setModalOpen(true);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-
-                {/* Add task to column */}
-                <div className="px-2 py-2 border-t border-border/50">
+        <div className="flex gap-4 p-6 h-full min-w-min">
+          {columns.map((column) => (
+            <div
+              key={column.id}
+              className="flex flex-col w-72 flex-shrink-0 bg-bg-primary border border-border rounded-[2px]"
+            >
+              {/* Column header */}
+              <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+                {editingColumnId === column.id ? (
+                  <input
+                    value={editingColumnName}
+                    onChange={(e) => setEditingColumnName(e.target.value)}
+                    onBlur={() =>
+                      handleRenameColumn(column.id, editingColumnName)
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter")
+                        handleRenameColumn(column.id, editingColumnName);
+                      if (e.key === "Escape") setEditingColumnId(null);
+                    }}
+                    autoFocus
+                    className="flex-1 px-1 py-0 text-xs font-semibold bg-transparent text-text-primary border-b border-accent-primary focus:outline-none"
+                  />
+                ) : (
                   <button
                     onClick={() => {
-                      setEditingTask(null);
-                      setCreateColumnId(column.id);
-                      setModalOpen(true);
+                      setEditingColumnId(column.id);
+                      setEditingColumnName(column.name);
                     }}
-                    className="w-full text-left px-2 py-1 text-[11px] text-text-secondary/60 hover:text-text-secondary transition-colors rounded-[2px] hover:bg-bg-tertiary/50"
+                    className="text-xs font-semibold text-text-primary uppercase tracking-wider hover:text-accent-primary transition-colors"
                   >
-                    + Add task
+                    {column.name}
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-text-secondary/60">
+                    {getColumnTasks(column.id).length}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteColumn(column.id)}
+                    className="text-text-secondary/40 hover:text-error transition-colors"
+                    title="Delete column"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
                   </button>
                 </div>
               </div>
-            ))}
 
-            {/* Empty state */}
-            {columns.length === 0 && (
-              <div className="flex-1 flex flex-col items-center justify-center text-text-secondary">
-                <p className="text-sm mb-3">
-                  No columns yet. Add columns to start organising tasks.
-                </p>
+              {/* Drop zone */}
+              <div
+                onDragEnter={(e) => handleColumnDragEnter(e, column.id)}
+                onDragLeave={() => handleColumnDragLeave(column.id)}
+                onDragOver={handleColumnDragOver}
+                onDrop={(e) => handleColumnDrop(e, column.id)}
+                className={`flex-1 overflow-y-auto p-2 space-y-2 min-h-[60px] transition-colors ${
+                  dragOverColumnId === column.id && draggingTaskId
+                    ? "bg-accent-primary/5 border-2 border-dashed border-accent-primary/30"
+                    : ""
+                }`}
+              >
+                {getColumnTasks(column.id).map((task) => (
+                  <div
+                    key={task.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, task.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`cursor-grab active:cursor-grabbing ${
+                      draggingTaskId === task.id ? "opacity-50" : ""
+                    }`}
+                  >
+                    <TaskCard
+                      task={task}
+                      onClick={() => {
+                        setEditingTask(task);
+                        setModalOpen(true);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Add task to column */}
+              <div className="px-2 py-2 border-t border-border/50">
                 <button
-                  onClick={handleAddColumn}
-                  className="px-4 py-2 text-sm bg-accent-primary text-bg-primary font-semibold rounded-[2px] hover:bg-accent-primary/90 transition-colors"
+                  onClick={() => {
+                    setEditingTask(null);
+                    setCreateColumnId(column.id);
+                    setModalOpen(true);
+                  }}
+                  className="w-full text-left px-2 py-1 text-[11px] text-text-secondary/60 hover:text-text-secondary transition-colors rounded-[2px] hover:bg-bg-tertiary/50"
                 >
-                  + Add First Column
+                  + Add task
                 </button>
               </div>
-            )}
-          </div>
-        </DragDropContext>
+            </div>
+          ))}
+
+          {/* Empty state */}
+          {columns.length === 0 && (
+            <div className="flex-1 flex flex-col items-center justify-center text-text-secondary">
+              <p className="text-sm mb-3">
+                No columns yet. Add columns to start organising tasks.
+              </p>
+              <button
+                onClick={handleAddColumn}
+                className="px-4 py-2 text-sm bg-accent-primary text-bg-primary font-semibold rounded-[2px] hover:bg-accent-primary/90 transition-colors"
+              >
+                + Add First Column
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Task Modal */}
