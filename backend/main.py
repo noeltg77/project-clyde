@@ -1612,10 +1612,26 @@ async def chat_websocket(ws: WebSocket):
         # If we have an SDK session ID, the CLI resumes its persisted session
         # (with built-in auto-compaction). Otherwise, fall back to manual
         # context summary from prior_messages.
-        await manager.initialize(
-            prior_messages=prior_messages if not stored_sdk_session_id else None,
-            sdk_session_id=stored_sdk_session_id,
-        )
+        if stored_sdk_session_id:
+            try:
+                await manager.initialize(
+                    prior_messages=None,
+                    sdk_session_id=stored_sdk_session_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[WS] Native session resume failed: {e} "
+                    "— falling back to context summary"
+                )
+                await manager.initialize(
+                    prior_messages=prior_messages,
+                    sdk_session_id=None,
+                )
+        else:
+            await manager.initialize(
+                prior_messages=prior_messages,
+                sdk_session_id=None,
+            )
 
         # Notify frontend of session (session_id is null for deferred new chats)
         await ws.send_json({"type": "init", "data": {"session_id": session_id}})
