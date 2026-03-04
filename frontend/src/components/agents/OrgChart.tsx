@@ -132,6 +132,7 @@ function AgentNode({
   onSelect,
   nodeRef,
   team,
+  teamBorderColor,
 }: {
   agent: Agent;
   isOrchestrator?: boolean;
@@ -140,6 +141,7 @@ function AgentNode({
   onSelect: (agent: Agent) => void;
   nodeRef?: (el: HTMLElement | null) => void;
   team?: Team | null;
+  teamBorderColor?: string;
 }) {
   const borderColor = isOrchestrator
     ? "border-agent-opus"
@@ -168,9 +170,10 @@ function AgentNode({
         relative flex flex-col items-center justify-between gap-2 bg-bg-tertiary rounded-[2px]
         border-2 transition-all hover:brightness-110 cursor-pointer
         w-[200px] min-h-[250px] px-6 py-5
-        ${isSelected ? `${borderColor} ring-2 ring-accent-primary/20` : borderColor}
+        ${teamBorderColor ? "" : isSelected ? `${borderColor} ring-2 ring-accent-primary/20` : borderColor}
+        ${isSelected && teamBorderColor ? "ring-2 ring-accent-primary/20" : ""}
       `}
-      style={{ zIndex: 1 }}
+      style={{ zIndex: 1, ...(teamBorderColor ? { borderColor: teamBorderColor } : {}) }}
     >
       {/* Status indicator — top-right square dot */}
       <div
@@ -281,31 +284,48 @@ function TeamHeader({
       />
 
       {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              setDraft(team.name);
-              setEditing(false);
-            }
-          }}
-          className="text-xl font-bold text-text-primary bg-bg-secondary border border-accent-primary/30 rounded-[2px] px-2 py-0.5 outline-none font-display"
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                setDraft(team.name);
+                setEditing(false);
+              }
+            }}
+            className="text-xl font-bold text-text-primary bg-bg-secondary border border-accent-primary/30 rounded-[2px] px-2 py-0.5 outline-none font-display"
+          />
+          <button
+            onClick={commit}
+            className="p-1.5 rounded-[2px] text-accent-tertiary hover:bg-accent-tertiary/15 transition-colors"
+            title="Save name"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+        </>
       ) : (
-        <h2
-          onDoubleClick={() => {
-            setDraft(team.name);
-            setEditing(true);
-          }}
-          className="text-xl font-bold text-text-primary font-display cursor-text"
-          title="Double-click to rename"
-        >
-          {team.name}
-        </h2>
+        <>
+          <h2 className="text-xl font-bold text-text-primary font-display">
+            {team.name}
+          </h2>
+          <button
+            onClick={() => {
+              setDraft(team.name);
+              setEditing(true);
+            }}
+            className="p-1.5 rounded-[2px] text-text-secondary/40 hover:text-text-primary hover:bg-bg-secondary transition-colors"
+            title="Rename team"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+          </button>
+        </>
       )}
     </div>
   );
@@ -1010,6 +1030,7 @@ export function OrgChart() {
                             isSelected={selectedAgent?.registryId === agent.registryId}
                             onSelect={setSelectedAgent}
                             team={teamMap.get(agent.team || "")}
+                            teamBorderColor={selectedTeam?.color}
                             nodeRef={(el) => {
                               if (el) {
                                 childRefsMap.current.set(agent.registryId, el);
