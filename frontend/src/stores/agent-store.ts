@@ -9,6 +9,14 @@ export type Agent = {
   status: "active" | "paused" | "archived";
   tools: string[];
   skills: string[];
+  team: string | null;
+};
+
+export type Team = {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
 };
 
 export type ActivityEvent = {
@@ -47,6 +55,7 @@ export type ActiveAgentMeta = {
 export type AgentState = {
   orchestrator: Agent | null;
   agents: Agent[];
+  teams: Team[];
   activityEvents: ActivityEvent[];
   pendingPermissions: PendingPermission[];
   activeAgentIds: string[];
@@ -58,6 +67,8 @@ export type AgentActions = {
   setAgents: (agents: Agent[]) => void;
   addAgent: (agent: Agent) => void;
   updateAgent: (registryId: string, partial: Partial<Agent>) => void;
+  setTeams: (teams: Team[]) => void;
+  updateTeam: (teamId: string, partial: Partial<Team>) => void;
   addActivityEvent: (event: ActivityEvent) => void;
   setActivityEvents: (events: ActivityEvent[]) => void;
   clearActivityEvents: () => void;
@@ -73,6 +84,7 @@ export const createAgentStore = (initState?: Partial<AgentState>) =>
   createStore<AgentStore>()((set) => ({
     orchestrator: null,
     agents: [],
+    teams: [],
     activityEvents: [],
     pendingPermissions: [],
     activeAgentIds: [],
@@ -92,6 +104,15 @@ export const createAgentStore = (initState?: Partial<AgentState>) =>
       set((state) => ({
         agents: state.agents.map((a) =>
           a.registryId === registryId ? { ...a, ...partial } : a
+        ),
+      })),
+
+    setTeams: (teams) => set({ teams }),
+
+    updateTeam: (teamId, partial) =>
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId ? { ...t, ...partial } : t
         ),
       })),
 

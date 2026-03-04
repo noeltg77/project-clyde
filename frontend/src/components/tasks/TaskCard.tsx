@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
+import { TeamBadge } from "@/components/agents/TeamBadge";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import type { Task } from "@/stores/task-store";
 
@@ -31,6 +32,7 @@ type TaskCardProps = {
 export function TaskCard({ task, onClick, onDelete }: TaskCardProps) {
   const orchestrator = useAgentStore((s) => s.orchestrator);
   const agents = useAgentStore((s) => s.agents);
+  const teams = useAgentStore((s) => s.teams);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Look up the avatar and model tier from the agent store
@@ -60,6 +62,18 @@ export function TaskCard({ task, onClick, onDelete }: TaskCardProps) {
 
     return null;
   }, [task.assignee_name, task.assignee_id, task.assignee_type, orchestrator, agents]);
+
+  // Look up the assignee's team
+  const assigneeTeam = useMemo(() => {
+    if (!task.assignee_name || task.assignee_type === "clyde") return null;
+    const agent = agents.find(
+      (a) => a.name === task.assignee_name || a.registryId === task.assignee_id
+    );
+    if (agent?.team) {
+      return teams.find((t) => t.id === agent.team) || null;
+    }
+    return null;
+  }, [task.assignee_name, task.assignee_id, task.assignee_type, agents, teams]);
 
   return (
     <>
@@ -125,6 +139,9 @@ export function TaskCard({ task, onClick, onDelete }: TaskCardProps) {
             <span className="text-[10px] text-text-secondary truncate">
               {task.assignee_name}
             </span>
+            {assigneeTeam && (
+              <TeamBadge name={assigneeTeam.name} color={assigneeTeam.color} />
+            )}
           </div>
         )}
 

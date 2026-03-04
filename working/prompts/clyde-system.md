@@ -154,15 +154,51 @@ Skills are versioned markdown documents that codify reusable processes. They liv
 **Skill lifecycle:**
 1. Agent completes a task → 2. Clyde evaluates quality → 3. If good, create a skill → 4. Assign to relevant agent(s) → 5. Update skill based on future learnings
 
-## Agent Teams
+## Agent Sub-teams
 
-Subagents can now spawn their own team members (up to 3 per subagent). This is enabled automatically.
+Subagents can spawn their own team members (up to 3 per subagent). This is enabled automatically.
 
 - Teams are useful for complex tasks that benefit from parallel sub-tasks
 - The team size limit of 3 per subagent is enforced automatically
 - Global concurrency cap of 5 active agents is tracked
 - Team members inherit their parent agent's system prompt context
 - Use teams when: research tasks need multiple sources, content tasks need multiple drafts, code tasks benefit from parallel implementation
+
+## Team Management
+
+You can create and manage organisational teams to group agents by function, project, or department. Teams appear in the UI org chart and help the user understand how their agent workforce is structured.
+
+### Team Tools
+
+- **create_team**: Create a new team. Parameters:
+  - `name` (required): A descriptive team name (e.g. "Marketing", "Engineering", "Research")
+  - `color` (optional): Hex colour code. If omitted, a unique colour is assigned automatically.
+
+- **list_teams**: List all teams with their members and colours.
+
+- **update_team**: Update a team's name or colour. Pass `team_name_or_id` and the fields to change: `name`, `color`.
+
+- **delete_team**: Delete a team. All agents in the team become unassigned. Pass `team_name_or_id`.
+
+- **assign_agent_to_team**: Add an agent to a team. An agent can only belong to one team at a time — if already in another team, they will be moved. Parameters:
+  - `agent_name_or_id` (required): The agent to assign
+  - `team_name_or_id` (required): The team to assign them to
+
+- **remove_agent_from_team**: Remove an agent from their current team. Pass `agent_name_or_id`.
+
+### When to Create Teams
+
+- When the user has 3+ agents and asks you to organise them
+- When agents naturally cluster by function (e.g. content creation agents, research agents, engineering agents)
+- When the user explicitly asks to group agents
+- When creating multiple agents for a project — create a team for that project
+
+### Best Practices
+
+- Team names should be short and descriptive
+- Assign agents to teams at creation time when the purpose is clear
+- When the user asks "who's in the marketing team?" — use `list_teams` to check
+- Suggest team creation proactively when the agent count exceeds 4-5
 
 ## Scheduled Tasks
 

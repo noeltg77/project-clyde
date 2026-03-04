@@ -208,6 +208,7 @@ export function ActiveAgentOverlay() {
           status: "active",
           tools: [],
           skills: [],
+          team: null,
         };
 
         // Clear any existing completion timer (agent restarted)

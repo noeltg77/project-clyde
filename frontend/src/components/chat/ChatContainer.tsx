@@ -45,6 +45,7 @@ export function ChatContainer() {
   const setActivityEvents = useAgentStore((s) => s.setActivityEvents);
   const clearActivityEvents = useAgentStore((s) => s.clearActivityEvents);
   const setAgents = useAgentStore((s) => s.setAgents);
+  const setTeams = useAgentStore((s) => s.setTeams);
   const setOrchestrator = useAgentStore((s) => s.setOrchestrator);
   const setAgentActive = useAgentStore((s) => s.setAgentActive);
   const clearActiveAgents = useAgentStore((s) => s.clearActiveAgents);
@@ -380,6 +381,7 @@ export function ChatContainer() {
             status: "active" | "paused" | "archived";
             tools: string[];
             skills: string[];
+            team?: string;
           }>;
           if (agents) {
             setAgents(
@@ -392,6 +394,25 @@ export function ChatContainer() {
                 status: a.status || "active",
                 tools: a.tools || [],
                 skills: a.skills || [],
+                team: a.team || null,
+              }))
+            );
+          }
+
+          // Refresh teams
+          const teams = msg.data.teams as Array<{
+            id: string;
+            name: string;
+            color: string;
+            created_at?: string;
+          }>;
+          if (teams) {
+            setTeams(
+              teams.map((t) => ({
+                id: t.id,
+                name: t.name,
+                color: t.color,
+                created_at: t.created_at || "",
               }))
             );
           }
@@ -481,6 +502,7 @@ export function ChatContainer() {
       removePendingPermission,
       addActivityEvent,
       setAgents,
+      setTeams,
       setAgentActive,
       addInsight,
       addTaskToStore,
@@ -559,6 +581,7 @@ export function ChatContainer() {
               status: string;
               tools?: string[];
               skills?: string[];
+              team?: string;
             }) => ({
               registryId: a.id,
               name: a.name,
@@ -568,6 +591,7 @@ export function ChatContainer() {
               status: a.status || "active",
               tools: a.tools || [],
               skills: a.skills || [],
+              team: a.team || null,
             })
           );
           setAgents(agents);
@@ -584,8 +608,20 @@ export function ChatContainer() {
               status: orch.status || "active",
               tools: orch.tools || [],
               skills: orch.skills || [],
+              team: null,
             });
           }
+
+          // Populate teams
+          const teamsData = (data.teams || []).map(
+            (t: { id: string; name: string; color: string; created_at?: string }) => ({
+              id: t.id,
+              name: t.name,
+              color: t.color,
+              created_at: t.created_at || "",
+            })
+          );
+          setTeams(teamsData);
         }
       } catch (err) {
         console.error("Failed to fetch agents:", err);
@@ -594,7 +630,7 @@ export function ChatContainer() {
 
     fetchSessions();
     fetchAgents();
-  }, [setSessions, setAgents, setOrchestrator]);
+  }, [setSessions, setAgents, setTeams, setOrchestrator]);
 
   // Connect to WebSocket on mount (new session) — runs once
   useEffect(() => {

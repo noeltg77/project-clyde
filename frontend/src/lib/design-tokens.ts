@@ -20,6 +20,17 @@ export const modelColors: Record<string, string> = {
   haiku: colors.agentHaiku,
 };
 
+export const teamColors: string[] = [
+  "#FF6B6B", // Coral Red
+  "#4ECDC4", // Teal
+  "#FFE66D", // Yellow
+  "#A78BFA", // Purple
+  "#F97316", // Orange
+  "#38BDF8", // Sky Blue
+  "#FB7185", // Pink
+  "#34D399", // Emerald
+];
+
 export const springs = {
   snappy: { type: "spring" as const, stiffness: 500, damping: 30 },
   default: { type: "spring" as const, stiffness: 300, damping: 25 },

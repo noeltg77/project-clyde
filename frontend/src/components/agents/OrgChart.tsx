@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "./AgentAvatar";
 import { ModelBadge } from "./ModelBadge";
-import type { Agent } from "@/stores/agent-store";
+import { TeamBadge } from "./TeamBadge";
+import type { Agent, Team } from "@/stores/agent-store";
 
 const API_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -22,12 +24,16 @@ function ConnectorLines({
   parentRef,
   childRefs,
   containerRef,
-  agents,
+  childIds,
+  colorFn,
+  trunkColor = connectorColor.opus,
 }: {
   parentRef: React.RefObject<HTMLElement | null>;
   childRefs: React.RefObject<Map<string, HTMLElement>>;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  agents: Agent[];
+  childIds: string[];
+  colorFn: (id: string) => string;
+  trunkColor?: string;
 }) {
   const [lines, setLines] = useState<
     { x1: number; y1: number; x2: number; y2: number; color: string }[]
@@ -42,8 +48,8 @@ function ConnectorLines({
       const py = pRect.bottom - cRect.top;
 
       const newLines: typeof lines = [];
-      agents.forEach((agent) => {
-        const el = childRefs.current?.get(agent.registryId);
+      childIds.forEach((id) => {
+        const el = childRefs.current?.get(id);
         if (!el) return;
         const aRect = el.getBoundingClientRect();
         const ax = aRect.left + aRect.width / 2 - cRect.left;
@@ -53,55 +59,47 @@ function ConnectorLines({
           y1: py,
           x2: ax,
           y2: ay,
-          color: connectorColor[agent.model] || "#C8FF00",
+          color: colorFn(id),
         });
       });
       setLines(newLines);
     }
     calc();
     window.addEventListener("resize", calc);
-    // Recalc after images potentially load
     const timeout = setTimeout(calc, 200);
     return () => {
       window.removeEventListener("resize", calc);
       clearTimeout(timeout);
     };
-  }, [parentRef, childRefs, containerRef, agents]);
+  }, [parentRef, childRefs, containerRef, childIds, colorFn]);
 
   if (lines.length === 0) return null;
 
-  // Find the mid-Y between parent bottom and child tops
-  const midY = lines.length > 0
-    ? (lines[0].y1 + lines[0].y2) / 2
-    : 0;
+  const midY = (lines[0].y1 + lines[0].y2) / 2;
 
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
-      {/* Vertical line from parent down to midY */}
       <line
         x1={lines[0]?.x1}
         y1={lines[0]?.y1}
         x2={lines[0]?.x1}
         y2={midY}
-        stroke={connectorColor.opus}
+        stroke={trunkColor}
         strokeWidth="2"
       />
-      {/* Junction dot at parent */}
-      <circle cx={lines[0]?.x1} cy={midY} r="3" fill={connectorColor.opus} />
+      <circle cx={lines[0]?.x1} cy={midY} r="3" fill={trunkColor} />
 
-      {/* Horizontal line spanning all children */}
       {lines.length > 1 && (
         <line
           x1={Math.min(...lines.map((l) => l.x2))}
           y1={midY}
           x2={Math.max(...lines.map((l) => l.x2))}
           y2={midY}
-          stroke={connectorColor.opus}
+          stroke={trunkColor}
           strokeWidth="2"
         />
       )}
 
-      {/* Vertical lines from midY down to each child */}
       {lines.map((line, i) => (
         <g key={i}>
           <line
@@ -112,7 +110,6 @@ function ConnectorLines({
             stroke={line.color}
             strokeWidth="2"
           />
-          {/* Junction dots at horizontal line */}
           <rect
             x={line.x2 - 3}
             y={midY - 3}
@@ -134,6 +131,7 @@ function AgentNode({
   isSelected = false,
   onSelect,
   nodeRef,
+  team,
 }: {
   agent: Agent;
   isOrchestrator?: boolean;
@@ -141,6 +139,7 @@ function AgentNode({
   isSelected?: boolean;
   onSelect: (agent: Agent) => void;
   nodeRef?: (el: HTMLElement | null) => void;
+  team?: Team | null;
 }) {
   const borderColor = isOrchestrator
     ? "border-agent-opus"
@@ -166,9 +165,9 @@ function AgentNode({
       ref={nodeRef}
       onClick={() => onSelect(agent)}
       className={`
-        relative flex flex-col items-center justify-between gap-3 bg-bg-tertiary rounded-[2px]
+        relative flex flex-col items-center justify-between gap-2 bg-bg-tertiary rounded-[2px]
         border-2 transition-all hover:brightness-110 cursor-pointer
-        w-[200px] h-[250px] px-6 py-6
+        w-[200px] min-h-[250px] px-6 py-5
         ${isSelected ? `${borderColor} ring-2 ring-accent-primary/20` : borderColor}
       `}
       style={{ zIndex: 1 }}
@@ -194,8 +193,121 @@ function AgentNode({
         </p>
       </div>
 
-      <ModelBadge model={agent.model} />
+      <div className="flex flex-col items-center gap-1.5">
+        <ModelBadge model={agent.model} />
+        {team && <TeamBadge name={team.name} color={team.color} />}
+      </div>
     </button>
+  );
+}
+
+/* ─── Team Group Card (for team overview) ─── */
+function TeamGroupCard({
+  team,
+  memberCount,
+  onClick,
+  nodeRef,
+}: {
+  team: Team;
+  memberCount: number;
+  onClick: () => void;
+  nodeRef?: (el: HTMLElement | null) => void;
+}) {
+  return (
+    <button
+      ref={nodeRef}
+      onClick={onClick}
+      className="relative flex flex-col items-center justify-center gap-3 bg-bg-tertiary rounded-[2px] border-2 transition-all hover:brightness-110 cursor-pointer w-[200px] h-[160px] px-6 py-4"
+      style={{ borderColor: team.color, zIndex: 1 }}
+    >
+      <div
+        className="w-5 h-5 rounded-[2px]"
+        style={{ backgroundColor: team.color }}
+      />
+      <p className="font-bold text-text-primary text-base">{team.name}</p>
+      <p className="text-text-secondary text-[12px]">
+        {memberCount} {memberCount === 1 ? "agent" : "agents"}
+      </p>
+    </button>
+  );
+}
+
+/* ─── Inline-editable Team Header ─── */
+function TeamHeader({
+  team,
+  onBack,
+  onRename,
+}: {
+  team: Team;
+  onBack: () => void;
+  onRename: (newName: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(team.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== team.name) {
+      onRename(trimmed);
+    } else {
+      setDraft(team.name);
+    }
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex items-center gap-3 mb-8 justify-center">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] border bg-bg-tertiary text-text-secondary border-border hover:text-text-primary hover:border-text-secondary/40 transition-colors"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        Back
+      </button>
+
+      <div
+        className="w-4 h-4 rounded-[2px] flex-shrink-0"
+        style={{ backgroundColor: team.color }}
+      />
+
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              setDraft(team.name);
+              setEditing(false);
+            }
+          }}
+          className="text-xl font-bold text-text-primary bg-bg-secondary border border-accent-primary/30 rounded-[2px] px-2 py-0.5 outline-none font-display"
+        />
+      ) : (
+        <h2
+          onDoubleClick={() => {
+            setDraft(team.name);
+            setEditing(true);
+          }}
+          className="text-xl font-bold text-text-primary font-display cursor-text"
+          title="Double-click to rename"
+        >
+          {team.name}
+        </h2>
+      )}
+    </div>
   );
 }
 
@@ -343,17 +455,31 @@ function AgentDetail({
 /* ─── Main OrgChart ─── */
 export function OrgChart() {
   const agents = useAgentStore((s) => s.agents);
+  const teams = useAgentStore((s) => s.teams);
   const activeAgentIds = useAgentStore((s) => s.activeAgentIds);
   const setAgents = useAgentStore((s) => s.setAgents);
+  const setTeams = useAgentStore((s) => s.setTeams);
   const updateAgent = useAgentStore((s) => s.updateAgent);
+  const updateTeamStore = useAgentStore((s) => s.updateTeam);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // View mode: flat (all agents) or teams (grouped by team)
+  const [viewMode, setViewMode] = useState<"flat" | "teams">("flat");
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const parentRef = useRef<HTMLElement | null>(null);
   const childRefsMap = useRef<Map<string, HTMLElement>>(new Map());
 
-  // Fetch agents from API on mount
+  // Team lookup map
+  const teamMap = useMemo(() => {
+    const map = new Map<string, Team>();
+    teams.forEach((t) => map.set(t.id, t));
+    return map;
+  }, [teams]);
+
+  // Fetch agents and teams from API on mount
   useEffect(() => {
     const fetchAgents = async () => {
       try {
@@ -370,6 +496,7 @@ export function OrgChart() {
               status: string;
               tools?: string[];
               skills?: string[];
+              team?: string;
             }) => ({
               registryId: a.id,
               name: a.name,
@@ -379,9 +506,21 @@ export function OrgChart() {
               status: a.status as Agent["status"],
               tools: a.tools || [],
               skills: a.skills || [],
+              team: a.team || null,
             })
           );
           setAgents(parsed);
+
+          // Parse teams
+          const parsedTeams: Team[] = (data.teams || []).map(
+            (t: { id: string; name: string; color: string; created_at?: string }) => ({
+              id: t.id,
+              name: t.name,
+              color: t.color,
+              created_at: t.created_at || "",
+            })
+          );
+          setTeams(parsedTeams);
         }
       } catch {
         // Will rely on WebSocket updates
@@ -390,7 +529,7 @@ export function OrgChart() {
       }
     };
     fetchAgents();
-  }, [setAgents]);
+  }, [setAgents, setTeams]);
 
   // Handle status change via REST
   const handleStatusChange = async (registryId: string, newStatus: string) => {
@@ -413,9 +552,65 @@ export function OrgChart() {
     }
   };
 
+  // Handle team rename via REST
+  const handleTeamRename = async (teamId: string, newName: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        updateTeamStore(teamId, { name: newName });
+      }
+    } catch (err) {
+      console.error("Failed to rename team:", err);
+    }
+  };
+
   const activeAgents = agents.filter((a) => a.status === "active");
   const pausedAgents = agents.filter((a) => a.status === "paused");
   const archivedAgents = agents.filter((a) => a.status === "archived");
+
+  // Agents grouped by team for team view
+  const unassignedAgents = activeAgents.filter((a) => !a.team);
+  const teamsWithMembers = useMemo(() => {
+    return teams.map((t) => ({
+      team: t,
+      members: activeAgents.filter((a) => a.team === t.id),
+    }));
+  }, [teams, activeAgents]);
+
+  // Selected team details
+  const selectedTeam = selectedTeamId ? teamMap.get(selectedTeamId) : null;
+  const selectedTeamMembers = selectedTeamId
+    ? activeAgents.filter((a) => a.team === selectedTeamId)
+    : [];
+
+  // Color function for connector lines
+  const agentColorFn = useMemo(
+    () => (id: string) => {
+      const agent = activeAgents.find((a) => a.registryId === id);
+      return agent ? connectorColor[agent.model] || "#C8FF00" : "#C8FF00";
+    },
+    [activeAgents]
+  );
+
+  const teamColorFn = useMemo(
+    () => (id: string) => {
+      const team = teamMap.get(id);
+      return team?.color || "#A0A090";
+    },
+    [teamMap]
+  );
+
+  const teamMemberColorFn = useMemo(
+    () => (id: string) => {
+      const agent = selectedTeamMembers.find((a) => a.registryId === id);
+      return agent ? connectorColor[agent.model] || "#C8FF00" : "#C8FF00";
+    },
+    [selectedTeamMembers]
+  );
 
   const clydeAgent: Agent = {
     registryId: "clyde-001",
@@ -426,7 +621,26 @@ export function OrgChart() {
     status: "active",
     tools: [],
     skills: [],
+    team: null,
   };
+
+  // Build child IDs arrays for connector lines
+  const flatChildIds = activeAgents.map((a) => a.registryId);
+  const teamChildIds = [
+    ...teams.map((t) => t.id),
+    ...(unassignedAgents.length > 0 ? ["__unassigned__"] : []),
+  ];
+  const teamMemberChildIds = selectedTeamMembers.map((a) => a.registryId);
+
+  // Color fn for team overview (including unassigned)
+  const teamOverviewColorFn = useMemo(
+    () => (id: string) => {
+      if (id === "__unassigned__") return "#A0A090";
+      const team = teamMap.get(id);
+      return team?.color || "#A0A090";
+    },
+    [teamMap]
+  );
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -440,126 +654,399 @@ export function OrgChart() {
             backgroundSize: "40px 40px",
           }}
         >
-          {/* Tree container — relative for SVG overlay */}
-          <div ref={containerRef} className="relative max-w-6xl mx-auto">
-            {/* SVG connector lines */}
-            {activeAgents.length > 0 && (
-              <ConnectorLines
-                parentRef={parentRef}
-                childRefs={childRefsMap}
-                containerRef={containerRef}
-                agents={activeAgents}
-              />
-            )}
-
-            {/* Orchestrator — Clyde */}
-            <div className="flex justify-center mb-16">
-              <AgentNode
-                agent={clydeAgent}
-                isOrchestrator
-                isActive
-                isSelected={selectedAgent?.registryId === "clyde-001"}
-                onSelect={setSelectedAgent}
-                nodeRef={(el) => {
-                  parentRef.current = el;
-                }}
-              />
-            </div>
-
-            {/* Subagents row */}
-            {activeAgents.length > 0 && (
-              <div className="flex flex-wrap justify-center gap-6">
-                {activeAgents.map((agent) => (
-                  <AgentNode
-                    key={agent.registryId}
-                    agent={agent}
-                    isActive={activeAgentIds.includes(agent.registryId)}
-                    isSelected={selectedAgent?.registryId === agent.registryId}
-                    onSelect={setSelectedAgent}
-                    nodeRef={(el) => {
-                      if (el) {
-                        childRefsMap.current.set(agent.registryId, el);
-                      } else {
-                        childRefsMap.current.delete(agent.registryId);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {activeAgents.length === 0 && !loading && (
-              <div className="mt-2 text-center">
-                <p className="text-sm text-text-secondary/50">
-                  No subagents created yet
-                </p>
-                <p className="text-[11px] text-text-secondary/30 mt-1">
-                  Ask Clyde to create a specialist
-                </p>
-              </div>
-            )}
+          {/* View toggle */}
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <button
+              onClick={() => {
+                setViewMode("flat");
+                setSelectedTeamId(null);
+                setSelectedAgent(null);
+              }}
+              className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] border transition-colors ${
+                viewMode === "flat"
+                  ? "bg-accent-primary/15 text-accent-primary border-accent-primary/30"
+                  : "bg-bg-tertiary text-text-secondary border-border hover:text-text-primary"
+              }`}
+            >
+              All Agents
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("teams");
+                setSelectedTeamId(null);
+                setSelectedAgent(null);
+              }}
+              className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] border transition-colors ${
+                viewMode === "teams"
+                  ? "bg-accent-primary/15 text-accent-primary border-accent-primary/30"
+                  : "bg-bg-tertiary text-text-secondary border-border hover:text-text-primary"
+              }`}
+            >
+              Teams
+            </button>
           </div>
 
-          {/* Selected Agent Detail */}
-          {selectedAgent && (
-            <div className="max-w-3xl mx-auto mt-10">
-              <AgentDetail
-                agent={selectedAgent}
-                onClose={() => setSelectedAgent(null)}
-                onStatusChange={handleStatusChange}
-              />
-            </div>
+          {/* ═══ FLAT VIEW ═══ */}
+          {viewMode === "flat" && (
+            <>
+              <div ref={containerRef} className="relative max-w-6xl mx-auto">
+                {activeAgents.length > 0 && (
+                  <ConnectorLines
+                    parentRef={parentRef}
+                    childRefs={childRefsMap}
+                    containerRef={containerRef}
+                    childIds={flatChildIds}
+                    colorFn={agentColorFn}
+                  />
+                )}
+
+                {/* Orchestrator — Clyde */}
+                <div className="flex justify-center mb-16">
+                  <AgentNode
+                    agent={clydeAgent}
+                    isOrchestrator
+                    isActive
+                    isSelected={selectedAgent?.registryId === "clyde-001"}
+                    onSelect={setSelectedAgent}
+                    nodeRef={(el) => {
+                      parentRef.current = el;
+                    }}
+                  />
+                </div>
+
+                {/* Subagents row */}
+                {activeAgents.length > 0 && (
+                  <div className="flex flex-wrap justify-center gap-6">
+                    {activeAgents.map((agent) => (
+                      <AgentNode
+                        key={agent.registryId}
+                        agent={agent}
+                        isActive={activeAgentIds.includes(agent.registryId)}
+                        isSelected={selectedAgent?.registryId === agent.registryId}
+                        onSelect={setSelectedAgent}
+                        team={teamMap.get(agent.team || "")}
+                        nodeRef={(el) => {
+                          if (el) {
+                            childRefsMap.current.set(agent.registryId, el);
+                          } else {
+                            childRefsMap.current.delete(agent.registryId);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {activeAgents.length === 0 && !loading && (
+                  <div className="mt-2 text-center">
+                    <p className="text-sm text-text-secondary/50">
+                      No subagents created yet
+                    </p>
+                    <p className="text-[11px] text-text-secondary/30 mt-1">
+                      Ask Clyde to create a specialist
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Agent Detail */}
+              {selectedAgent && (
+                <div className="max-w-3xl mx-auto mt-10">
+                  <AgentDetail
+                    agent={selectedAgent}
+                    onClose={() => setSelectedAgent(null)}
+                    onStatusChange={handleStatusChange}
+                  />
+                </div>
+              )}
+
+              {/* Paused + Archived sections */}
+              {(pausedAgents.length > 0 || archivedAgents.length > 0) && (
+                <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
+                  {pausedAgents.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] font-semibold uppercase tracking-widest text-yellow-500/60 mb-3">
+                        Paused
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {pausedAgents.map((agent) => (
+                          <button
+                            key={agent.registryId}
+                            onClick={() => setSelectedAgent(agent)}
+                            className="flex items-center gap-2 px-3 py-2 bg-bg-tertiary rounded-[2px] border border-yellow-500/20 hover:border-yellow-500/40 transition-colors"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                            <span className="text-sm text-text-secondary">
+                              {agent.name}
+                            </span>
+                            <span className="text-[10px] text-text-secondary/40">
+                              {agent.role}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {archivedAgents.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
+                        Archived
+                      </h4>
+                      <div className="space-y-1.5">
+                        {archivedAgents.map((agent) => (
+                          <button
+                            key={agent.registryId}
+                            onClick={() => setSelectedAgent(agent)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-text-secondary/50 hover:text-text-secondary transition-colors w-full text-left"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-text-secondary/20" />
+                            <span className="text-sm">
+                              {agent.name} — {agent.role}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
-          {/* Paused + Archived sections */}
-          {(pausedAgents.length > 0 || archivedAgents.length > 0) && (
-            <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
-              {pausedAgents.length > 0 && (
-                <div>
-                  <h4 className="text-[11px] font-semibold uppercase tracking-widest text-yellow-500/60 mb-3">
-                    Paused
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {pausedAgents.map((agent) => (
-                      <button
-                        key={agent.registryId}
-                        onClick={() => setSelectedAgent(agent)}
-                        className="flex items-center gap-2 px-3 py-2 bg-bg-tertiary rounded-[2px] border border-yellow-500/20 hover:border-yellow-500/40 transition-colors"
-                      >
-                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                        <span className="text-sm text-text-secondary">
-                          {agent.name}
-                        </span>
-                        <span className="text-[10px] text-text-secondary/40">
-                          {agent.role}
-                        </span>
-                      </button>
-                    ))}
+          {/* ═══ TEAMS VIEW ═══ */}
+          {viewMode === "teams" && (
+            <AnimatePresence mode="wait">
+              {/* Team Overview (no team selected) */}
+              {!selectedTeamId && (
+                <motion.div
+                  key="team-overview"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.05 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <div ref={containerRef} className="relative max-w-6xl mx-auto">
+                    {(teams.length > 0 || unassignedAgents.length > 0) && (
+                      <ConnectorLines
+                        parentRef={parentRef}
+                        childRefs={childRefsMap}
+                        containerRef={containerRef}
+                        childIds={teamChildIds}
+                        colorFn={teamOverviewColorFn}
+                      />
+                    )}
+
+                    {/* Orchestrator — Clyde */}
+                    <div className="flex justify-center mb-16">
+                      <AgentNode
+                        agent={clydeAgent}
+                        isOrchestrator
+                        isActive
+                        isSelected={selectedAgent?.registryId === "clyde-001"}
+                        onSelect={setSelectedAgent}
+                        nodeRef={(el) => {
+                          parentRef.current = el;
+                        }}
+                      />
+                    </div>
+
+                    {/* Team group cards */}
+                    <div className="flex flex-wrap justify-center gap-6">
+                      {teamsWithMembers.map(({ team, members }) => (
+                        <TeamGroupCard
+                          key={team.id}
+                          team={team}
+                          memberCount={members.length}
+                          onClick={() => {
+                            setSelectedTeamId(team.id);
+                            setSelectedAgent(null);
+                          }}
+                          nodeRef={(el) => {
+                            if (el) {
+                              childRefsMap.current.set(team.id, el);
+                            } else {
+                              childRefsMap.current.delete(team.id);
+                            }
+                          }}
+                        />
+                      ))}
+
+                      {/* Unassigned group */}
+                      {unassignedAgents.length > 0 && (
+                        <button
+                          ref={(el) => {
+                            if (el) {
+                              childRefsMap.current.set("__unassigned__", el);
+                            } else {
+                              childRefsMap.current.delete("__unassigned__");
+                            }
+                          }}
+                          onClick={() => {
+                            setSelectedTeamId("__unassigned__");
+                            setSelectedAgent(null);
+                          }}
+                          className="relative flex flex-col items-center justify-center gap-3 bg-bg-tertiary rounded-[2px] border-2 border-border transition-all hover:brightness-110 cursor-pointer w-[200px] h-[160px] px-6 py-4"
+                          style={{ zIndex: 1 }}
+                        >
+                          <div className="w-5 h-5 rounded-[2px] bg-text-secondary/30" />
+                          <p className="font-bold text-text-secondary text-base">Unassigned</p>
+                          <p className="text-text-secondary/60 text-[12px]">
+                            {unassignedAgents.length} {unassignedAgents.length === 1 ? "agent" : "agents"}
+                          </p>
+                        </button>
+                      )}
+                    </div>
+
+                    {teams.length === 0 && unassignedAgents.length === 0 && !loading && (
+                      <div className="mt-2 text-center">
+                        <p className="text-sm text-text-secondary/50">
+                          No teams or agents yet
+                        </p>
+                        <p className="text-[11px] text-text-secondary/30 mt-1">
+                          Ask Clyde to create a team
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
+
+                  {/* Selected Agent Detail (from clicking Clyde) */}
+                  {selectedAgent && (
+                    <div className="max-w-3xl mx-auto mt-10">
+                      <AgentDetail
+                        agent={selectedAgent}
+                        onClose={() => setSelectedAgent(null)}
+                        onStatusChange={handleStatusChange}
+                      />
+                    </div>
+                  )}
+                </motion.div>
               )}
-              {archivedAgents.length > 0 && (
-                <div>
-                  <h4 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
-                    Archived
-                  </h4>
-                  <div className="space-y-1.5">
-                    {archivedAgents.map((agent) => (
+
+              {/* Team Detail (zoomed in) */}
+              {selectedTeamId && (
+                <motion.div
+                  key={`team-detail-${selectedTeamId}`}
+                  initial={{ opacity: 0, scale: 1.1 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  {/* Team header with back button and editable name */}
+                  {selectedTeamId === "__unassigned__" ? (
+                    <div className="flex items-center gap-3 mb-8 justify-center">
                       <button
-                        key={agent.registryId}
-                        onClick={() => setSelectedAgent(agent)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-text-secondary/50 hover:text-text-secondary transition-colors w-full text-left"
+                        onClick={() => {
+                          setSelectedTeamId(null);
+                          setSelectedAgent(null);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] border bg-bg-tertiary text-text-secondary border-border hover:text-text-primary hover:border-text-secondary/40 transition-colors"
                       >
-                        <div className="w-1.5 h-1.5 rounded-full bg-text-secondary/20" />
-                        <span className="text-sm">
-                          {agent.name} — {agent.role}
-                        </span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                        Back
                       </button>
-                    ))}
+                      <div className="w-4 h-4 rounded-[2px] bg-text-secondary/30" />
+                      <h2 className="text-xl font-bold text-text-secondary font-display">
+                        Unassigned
+                      </h2>
+                    </div>
+                  ) : (
+                    selectedTeam && (
+                      <TeamHeader
+                        team={selectedTeam}
+                        onBack={() => {
+                          setSelectedTeamId(null);
+                          setSelectedAgent(null);
+                        }}
+                        onRename={(newName) => handleTeamRename(selectedTeamId, newName)}
+                      />
+                    )
+                  )}
+
+                  {/* Team members */}
+                  <div ref={containerRef} className="relative max-w-6xl mx-auto">
+                    {(selectedTeamId === "__unassigned__" ? unassignedAgents : selectedTeamMembers).length > 0 && (
+                      <ConnectorLines
+                        parentRef={parentRef}
+                        childRefs={childRefsMap}
+                        containerRef={containerRef}
+                        childIds={
+                          selectedTeamId === "__unassigned__"
+                            ? unassignedAgents.map((a) => a.registryId)
+                            : teamMemberChildIds
+                        }
+                        colorFn={
+                          selectedTeamId === "__unassigned__"
+                            ? agentColorFn
+                            : teamMemberColorFn
+                        }
+                        trunkColor={selectedTeam?.color || "#A0A090"}
+                      />
+                    )}
+
+                    {/* Clyde as parent node */}
+                    <div className="flex justify-center mb-16">
+                      <AgentNode
+                        agent={clydeAgent}
+                        isOrchestrator
+                        isActive
+                        isSelected={selectedAgent?.registryId === "clyde-001"}
+                        onSelect={setSelectedAgent}
+                        nodeRef={(el) => {
+                          parentRef.current = el;
+                        }}
+                      />
+                    </div>
+
+                    {/* Member cards */}
+                    <div className="flex flex-wrap justify-center gap-6">
+                      {(selectedTeamId === "__unassigned__" ? unassignedAgents : selectedTeamMembers).map(
+                        (agent) => (
+                          <AgentNode
+                            key={agent.registryId}
+                            agent={agent}
+                            isActive={activeAgentIds.includes(agent.registryId)}
+                            isSelected={selectedAgent?.registryId === agent.registryId}
+                            onSelect={setSelectedAgent}
+                            team={teamMap.get(agent.team || "")}
+                            nodeRef={(el) => {
+                              if (el) {
+                                childRefsMap.current.set(agent.registryId, el);
+                              } else {
+                                childRefsMap.current.delete(agent.registryId);
+                              }
+                            }}
+                          />
+                        )
+                      )}
+                    </div>
+
+                    {(selectedTeamId === "__unassigned__" ? unassignedAgents : selectedTeamMembers).length === 0 && (
+                      <div className="mt-2 text-center">
+                        <p className="text-sm text-text-secondary/50">
+                          No agents in this {selectedTeamId === "__unassigned__" ? "group" : "team"}
+                        </p>
+                        <p className="text-[11px] text-text-secondary/30 mt-1">
+                          Ask Clyde to assign agents
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
+
+                  {/* Selected Agent Detail */}
+                  {selectedAgent && (
+                    <div className="max-w-3xl mx-auto mt-10">
+                      <AgentDetail
+                        agent={selectedAgent}
+                        onClose={() => setSelectedAgent(null)}
+                        onStatusChange={handleStatusChange}
+                      />
+                    </div>
+                  )}
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
           )}
         </div>
       </div>

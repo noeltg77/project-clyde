@@ -231,6 +231,171 @@ def archive_agent(working_dir: str, registry_id: str) -> dict[str, Any]:
     return update_agent(working_dir, registry_id, {"status": "archived"})
 
 
+# ─── Team Management ─────────────────────────────────────────────
+
+TEAM_COLORS = [
+    "#FF6B6B",  # Coral Red
+    "#4ECDC4",  # Teal
+    "#FFE66D",  # Yellow
+    "#A78BFA",  # Purple
+    "#F97316",  # Orange
+    "#38BDF8",  # Sky Blue
+    "#FB7185",  # Pink
+    "#34D399",  # Emerald
+]
+
+
+def _next_available_color(working_dir: str) -> str:
+    """Return the first team color not already used by an existing team."""
+    registry = load_registry(working_dir)
+    used = {t.get("color") for t in registry.get("teams", [])}
+    for color in TEAM_COLORS:
+        if color not in used:
+            return color
+    # All used — cycle back to the first
+    return TEAM_COLORS[0]
+
+
+def get_teams(working_dir: str) -> list[dict[str, Any]]:
+    """Return all teams."""
+    registry = load_registry(working_dir)
+    return registry.get("teams", [])
+
+
+def get_team_by_id(working_dir: str, team_id: str) -> dict[str, Any] | None:
+    """Find a team by ID."""
+    registry = load_registry(working_dir)
+    for team in registry.get("teams", []):
+        if team["id"] == team_id:
+            return team
+    return None
+
+
+def get_team_by_name(working_dir: str, name: str) -> dict[str, Any] | None:
+    """Find a team by name (case-insensitive)."""
+    registry = load_registry(working_dir)
+    name_lower = name.lower()
+    for team in registry.get("teams", []):
+        if team["name"].lower() == name_lower:
+            return team
+    return None
+
+
+def create_team(
+    working_dir: str,
+    name: str,
+    color: str | None = None,
+) -> dict[str, Any]:
+    """Create a new team. Auto-assigns a color if none provided."""
+    registry = load_registry(working_dir)
+
+    # Check name uniqueness
+    name_lower = name.lower()
+    for existing in registry.get("teams", []):
+        if existing["name"].lower() == name_lower:
+            raise ValueError(f"Team with name '{name}' already exists")
+
+    if not color:
+        color = _next_available_color(working_dir)
+
+    team_entry = {
+        "id": f"team-{uuid.uuid4().hex[:12]}",
+        "name": name,
+        "color": color,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if "teams" not in registry:
+        registry["teams"] = []
+    registry["teams"].append(team_entry)
+    save_registry(working_dir, registry)
+
+    return team_entry
+
+
+def update_team(
+    working_dir: str, team_id: str, updates: dict[str, Any]
+) -> dict[str, Any]:
+    """Partial update of a team's configuration."""
+    registry = load_registry(working_dir)
+
+    # Prevent updating protected fields
+    protected = {"id", "created_at"}
+    updates = {k: v for k, v in updates.items() if k not in protected}
+
+    for i, team in enumerate(registry.get("teams", [])):
+        if team["id"] == team_id:
+            registry["teams"][i] = {**team, **updates}
+            save_registry(working_dir, registry)
+            return registry["teams"][i]
+
+    raise ValueError(f"Team with id '{team_id}' not found")
+
+
+def delete_team(working_dir: str, team_id: str) -> bool:
+    """Delete a team and unassign all its members."""
+    registry = load_registry(working_dir)
+
+    teams = registry.get("teams", [])
+    new_teams = [t for t in teams if t["id"] != team_id]
+    if len(new_teams) == len(teams):
+        raise ValueError(f"Team with id '{team_id}' not found")
+
+    registry["teams"] = new_teams
+
+    # Clear team reference on member agents
+    for agent in registry.get("agents", []):
+        if agent.get("team") == team_id:
+            agent["team"] = None
+
+    save_registry(working_dir, registry)
+    return True
+
+
+def assign_agent_to_team(
+    working_dir: str, agent_id: str, team_id: str
+) -> dict[str, Any]:
+    """Assign an agent to a team. An agent can only be in one team at a time."""
+    registry = load_registry(working_dir)
+
+    # Validate team exists
+    team = None
+    for t in registry.get("teams", []):
+        if t["id"] == team_id:
+            team = t
+            break
+    if not team:
+        raise ValueError(f"Team with id '{team_id}' not found")
+
+    # Find and update agent
+    for i, agent in enumerate(registry.get("agents", [])):
+        if agent["id"] == agent_id:
+            registry["agents"][i]["team"] = team_id
+            save_registry(working_dir, registry)
+            return registry["agents"][i]
+
+    raise ValueError(f"Agent with id '{agent_id}' not found")
+
+
+def remove_agent_from_team(working_dir: str, agent_id: str) -> dict[str, Any]:
+    """Remove an agent from their current team."""
+    registry = load_registry(working_dir)
+
+    for i, agent in enumerate(registry.get("agents", [])):
+        if agent["id"] == agent_id:
+            registry["agents"][i]["team"] = None
+            save_registry(working_dir, registry)
+            return registry["agents"][i]
+
+    raise ValueError(f"Agent with id '{agent_id}' not found")
+
+
+def get_team_members(working_dir: str, team_id: str) -> list[dict[str, Any]]:
+    """Return all agents assigned to a specific team."""
+    registry = load_registry(working_dir)
+    return [a for a in registry.get("agents", []) if a.get("team") == team_id]
+
+
 def get_used_avatars(working_dir: str) -> set[str]:
     """Collect all avatar paths currently in use by active/paused agents."""
     registry = load_registry(working_dir)

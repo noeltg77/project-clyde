@@ -55,6 +55,9 @@ _AUTO_ALLOW_TOOLS = {
     "analyse_team_gaps", "log_performance",
     # Phase 6: Proactive Insights
     "get_insights", "trigger_analysis",
+    # Phase 8: Teams
+    "create_team", "list_teams", "update_team", "delete_team",
+    "assign_agent_to_team", "remove_agent_from_team",
 }
 
 

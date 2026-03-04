@@ -22,6 +22,16 @@ from services.registry import (
     get_agent_by_name,
     get_agent_by_id,
     get_active_agents,
+    create_team,
+    get_teams,
+    get_team_by_name,
+    get_team_by_id,
+    update_team,
+    delete_team,
+    assign_agent_to_team,
+    remove_agent_from_team,
+    get_team_members,
+    TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
 from services.supabase_client import search_messages
@@ -301,6 +311,236 @@ async def get_agent_details_tool(args: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as e:
         return _error_response(f"Failed to get agent details: {str(e)}")
+
+
+# ─── Team Management Tools (Phase 8) ─────────────────────────────
+
+
+@tool(
+    "create_team",
+    "Create a new team for grouping agents by function or project. "
+    "A unique color is assigned automatically unless specified.",
+    {
+        "name": str,
+        "color": str,
+    },
+)
+async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new team."""
+    try:
+        name = args.get("name", "").strip()
+        color = args.get("color", "").strip() or None
+
+        if not name:
+            return _error_response("Team name is required.")
+
+        team_entry = create_team(
+            working_dir=_working_dir,
+            name=name,
+            color=color,
+        )
+
+        return _text_response(
+            f"Successfully created team:\n"
+            f"  Name: {team_entry['name']}\n"
+            f"  ID: {team_entry['id']}\n"
+            f"  Color: {team_entry['color']}"
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to create team: {str(e)}")
+
+
+@tool(
+    "list_teams",
+    "List all teams with their members, colors, and IDs.",
+    {},
+)
+async def list_teams_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List all teams."""
+    try:
+        teams = get_teams(_working_dir)
+
+        if not teams:
+            return _text_response("No teams created yet.")
+
+        lines = [f"Teams ({len(teams)} total):\n"]
+        for t in teams:
+            members = get_team_members(_working_dir, t["id"])
+            member_names = [m["name"] for m in members] if members else ["(none)"]
+            lines.append(
+                f"  - {t['name']} ({t['id']})\n"
+                f"    Color: {t['color']}\n"
+                f"    Members ({len(members)}): {', '.join(member_names)}"
+            )
+
+        return _text_response("\n".join(lines))
+
+    except Exception as e:
+        return _error_response(f"Failed to list teams: {str(e)}")
+
+
+@tool(
+    "update_team",
+    "Update a team's name or color. Specify the team by name or ID.",
+    {
+        "team_name_or_id": str,
+        "name": str,
+        "color": str,
+    },
+)
+async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update a team's configuration."""
+    try:
+        identifier = args.get("team_name_or_id", "").strip()
+        if not identifier:
+            return _error_response("team_name_or_id is required.")
+
+        # Find team by name or ID
+        team = get_team_by_name(_working_dir, identifier)
+        if not team:
+            team = get_team_by_id(_working_dir, identifier)
+        if not team:
+            return _error_response(f"Team '{identifier}' not found.")
+
+        updates: dict[str, Any] = {}
+
+        new_name = args.get("name", "").strip()
+        if new_name:
+            updates["name"] = new_name
+
+        new_color = args.get("color", "").strip()
+        if new_color:
+            updates["color"] = new_color
+
+        if not updates:
+            return _error_response("No updates provided.")
+
+        updated = update_team(_working_dir, team["id"], updates)
+        return _text_response(
+            f"Updated team {updated['name']} ({updated['id']}):\n"
+            + "\n".join(f"  {k}: {v}" for k, v in updates.items())
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to update team: {str(e)}")
+
+
+@tool(
+    "delete_team",
+    "Delete a team. All agents in the team will become unassigned.",
+    {
+        "team_name_or_id": str,
+    },
+)
+async def delete_team_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete a team."""
+    try:
+        identifier = args.get("team_name_or_id", "").strip()
+        if not identifier:
+            return _error_response("team_name_or_id is required.")
+
+        team = get_team_by_name(_working_dir, identifier)
+        if not team:
+            team = get_team_by_id(_working_dir, identifier)
+        if not team:
+            return _error_response(f"Team '{identifier}' not found.")
+
+        members = get_team_members(_working_dir, team["id"])
+        delete_team(_working_dir, team["id"])
+
+        return _text_response(
+            f"Deleted team '{team['name']}'. "
+            f"{len(members)} agent(s) unassigned."
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to delete team: {str(e)}")
+
+
+@tool(
+    "assign_agent_to_team",
+    "Add an agent to a team. An agent can only belong to one team at a time. "
+    "If the agent is already in another team, they will be moved.",
+    {
+        "agent_name_or_id": str,
+        "team_name_or_id": str,
+    },
+)
+async def assign_agent_to_team_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Assign an agent to a team."""
+    try:
+        agent_identifier = args.get("agent_name_or_id", "").strip()
+        team_identifier = args.get("team_name_or_id", "").strip()
+
+        if not agent_identifier:
+            return _error_response("agent_name_or_id is required.")
+        if not team_identifier:
+            return _error_response("team_name_or_id is required.")
+
+        # Find agent
+        agent = get_agent_by_name(_working_dir, agent_identifier)
+        if not agent:
+            agent = get_agent_by_id(_working_dir, agent_identifier)
+        if not agent:
+            return _error_response(f"Agent '{agent_identifier}' not found.")
+
+        # Find team
+        team = get_team_by_name(_working_dir, team_identifier)
+        if not team:
+            team = get_team_by_id(_working_dir, team_identifier)
+        if not team:
+            return _error_response(f"Team '{team_identifier}' not found.")
+
+        updated = assign_agent_to_team(_working_dir, agent["id"], team["id"])
+        return _text_response(
+            f"Assigned {updated['name']} to team '{team['name']}'."
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to assign agent to team: {str(e)}")
+
+
+@tool(
+    "remove_agent_from_team",
+    "Remove an agent from their current team.",
+    {
+        "agent_name_or_id": str,
+    },
+)
+async def remove_agent_from_team_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Remove an agent from their team."""
+    try:
+        identifier = args.get("agent_name_or_id", "").strip()
+        if not identifier:
+            return _error_response("agent_name_or_id is required.")
+
+        agent = get_agent_by_name(_working_dir, identifier)
+        if not agent:
+            agent = get_agent_by_id(_working_dir, identifier)
+        if not agent:
+            return _error_response(f"Agent '{identifier}' not found.")
+
+        if not agent.get("team"):
+            return _text_response(f"{agent['name']} is not in any team.")
+
+        updated = remove_agent_from_team(_working_dir, agent["id"])
+        return _text_response(
+            f"Removed {updated['name']} from their team."
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to remove agent from team: {str(e)}")
 
 
 # ─── Search Tools (Phase 3B) ──────────────────────────────────────
@@ -1811,5 +2051,12 @@ registry_mcp_server = create_sdk_mcp_server(
         create_task_tool,
         update_task_tool,
         delete_task_tool,
+        # Phase 8: Teams
+        create_team_tool,
+        list_teams_tool,
+        update_team_tool,
+        delete_team_tool,
+        assign_agent_to_team_tool,
+        remove_agent_from_team_tool,
     ],
 )

@@ -254,9 +254,10 @@ async def get_agents():
         return {
             "orchestrator": registry.get("orchestrator", {}),
             "agents": registry.get("agents", []),
+            "teams": registry.get("teams", []),
         }
     except Exception as e:
-        return {"orchestrator": {}, "agents": [], "error": str(e)}
+        return {"orchestrator": {}, "agents": [], "teams": [], "error": str(e)}
 
 
 # --- Session CRUD (Phase 3) ---
@@ -1184,6 +1185,22 @@ async def update_agent_rest(registry_id: str, body: dict):
         return {"agent": result}
     except Exception as e:
         logger.error(f"[API] Update agent failed: {e}")
+        return {"error": str(e)}
+
+
+# --- Team Management REST (Phase 8) ---
+
+
+@app.patch("/api/teams/{team_id}")
+async def update_team_rest(team_id: str, body: dict):
+    """Update a team's name or color via REST."""
+    try:
+        from services.registry import update_team
+
+        result = update_team(WORKING_DIR, team_id, body)
+        return {"team": result}
+    except Exception as e:
+        logger.error(f"[API] Update team failed: {e}")
         return {"error": str(e)}
 
 
@@ -2252,6 +2269,7 @@ async def chat_websocket(ws: WebSocket):
                 try:
                     registry = load_registry(WORKING_DIR)
                     agents = registry.get("agents", [])
+                    teams = registry.get("teams", [])
                     await ws.send_json({
                         "type": "registry_update",
                         "data": {
@@ -2266,9 +2284,11 @@ async def chat_websocket(ws: WebSocket):
                                     "status": a.get("status", "active"),
                                     "tools": a.get("tools", []),
                                     "skills": a.get("skills", []),
+                                    "team": a.get("team"),
                                 }
                                 for a in agents
                             ],
+                            "teams": teams,
                         },
                     })
                 except Exception:
