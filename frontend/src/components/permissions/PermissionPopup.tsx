@@ -24,7 +24,6 @@ export function PermissionPopup({
       setRemainingSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          onRespond(permission.id, "deny");
           return 0;
         }
         return prev - 1;
@@ -32,7 +31,15 @@ export function PermissionPopup({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [permission.id, onRespond]);
+  }, [permission.id]);
+
+  // Auto-deny when timer expires — kept outside state updater to avoid
+  // updating PermissionStack (via Zustand) during this component's render.
+  useEffect(() => {
+    if (remainingSeconds === 0) {
+      onRespond(permission.id, "deny");
+    }
+  }, [remainingSeconds, permission.id, onRespond]);
 
   // Format tool input for display
   const inputDisplay = Object.entries(permission.toolInput)
