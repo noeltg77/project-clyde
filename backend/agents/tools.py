@@ -1050,7 +1050,13 @@ async def create_schedule_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("Prompt is required.")
 
         scheduler = TaskScheduler(_working_dir)
-        schedule = await scheduler.add_schedule(name, cron, prompt, agent_name)
+        schedule = await scheduler.add_schedule(
+            name,
+            prompt,
+            agent_name,
+            schedule_type="recurring",
+            cron=cron,
+        )
 
         return _text_response(
             f"Created schedule '{name}':\n"

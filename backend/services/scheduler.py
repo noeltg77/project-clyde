@@ -68,6 +68,8 @@ class TaskScheduler:
         run_at: str | None = None,
     ) -> dict:
         """Create a new scheduled task (recurring or one-off)."""
+        # Reload from disk to avoid overwriting schedules added by other instances
+        self._load_schedules()
         schedule_id = f"sch-{random.randint(100000000000, 999999999999)}"
         now = datetime.now(timezone.utc).isoformat()
 
@@ -97,6 +99,7 @@ class TaskScheduler:
 
     async def remove_schedule(self, schedule_id: str) -> bool:
         """Remove a scheduled task."""
+        self._load_schedules()
         self._schedules = [s for s in self._schedules if s["id"] != schedule_id]
         self._save_schedules()
 
@@ -111,10 +114,12 @@ class TaskScheduler:
 
     async def list_schedules(self) -> list[dict]:
         """List all schedules."""
+        self._load_schedules()
         return self._schedules
 
     async def pause_schedule(self, schedule_id: str) -> bool:
         """Pause/resume a schedule by toggling enabled."""
+        self._load_schedules()
         for s in self._schedules:
             if s["id"] == schedule_id:
                 s["enabled"] = not s["enabled"]
@@ -138,6 +143,7 @@ class TaskScheduler:
         updates: dict,
     ) -> dict | None:
         """Update a schedule's configuration."""
+        self._load_schedules()
         for s in self._schedules:
             if s["id"] == schedule_id:
                 for k, v in updates.items():
