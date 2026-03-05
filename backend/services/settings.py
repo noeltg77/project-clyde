@@ -16,6 +16,7 @@ from typing import Any
 # Default values for all settings — new settings added here are automatically
 # picked up on next load even if the user's settings.json doesn't have them.
 DEFAULTS: dict[str, Any] = {
+    "clyde_model": "opus",
     "self_edit_enabled": True,
     "concurrency_cap": 5,
     "max_team_size": 3,
@@ -25,6 +26,13 @@ DEFAULTS: dict[str, Any] = {
     "save_uploads_enabled": True,
     "prompt_caching_enabled": True,
     "prevent_sleep_enabled": False,
+}
+
+# Maps model tier names to Claude API model IDs
+MODEL_ID_MAP: dict[str, str] = {
+    "opus": "claude-opus-4-6",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
 }
 
 # In-memory cache (TTL-based, invalidated on save)

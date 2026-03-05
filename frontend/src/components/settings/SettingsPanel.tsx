@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSettingsStore } from "@/stores/settings-store-provider";
+import { useAgentStore } from "@/stores/agent-store-provider";
 import { springs } from "@/lib/design-tokens";
 import { PromptEditor } from "./PromptEditor";
 import { PromptHistoryViewer } from "./PromptHistoryViewer";
@@ -13,6 +14,7 @@ const API_URL =
 type Tab = "system" | "prompts" | "controls";
 
 type RegistrySettings = {
+  clyde_model: "opus" | "sonnet" | "haiku";
   self_edit_enabled: boolean;
   concurrency_cap: number;
   max_team_size: number;
@@ -23,6 +25,12 @@ type RegistrySettings = {
   prompt_caching_enabled: boolean;
   prevent_sleep_enabled: boolean;
 };
+
+const MODEL_OPTIONS = [
+  { value: "opus" as const, label: "Opus", color: "#C8FF00", desc: "Most capable — highest quality reasoning" },
+  { value: "sonnet" as const, label: "Sonnet", color: "#00D4AA", desc: "Balanced — fast with strong performance" },
+  { value: "haiku" as const, label: "Haiku", color: "#A0A090", desc: "Fastest — lightweight and cost-efficient" },
+];
 
 function StatusDot({ ok }: { ok: boolean }) {
   return (
@@ -739,6 +747,8 @@ function ProactiveSection({
 function ControlsTab() {
   const [settings, setSettings] = useState<RegistrySettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const orchestrator = useAgentStore((s) => s.orchestrator);
+  const setOrchestrator = useAgentStore((s) => s.setOrchestrator);
 
   useEffect(() => {
     async function load() {
@@ -766,6 +776,11 @@ function ControlsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [key]: value }),
       });
+
+      // When clyde_model changes, update the orchestrator in the agent store
+      if (key === "clyde_model" && orchestrator) {
+        setOrchestrator({ ...orchestrator, model: value as "opus" | "sonnet" | "haiku" });
+      }
     } catch {
       // ignore
     } finally {
@@ -783,6 +798,61 @@ function ControlsTab() {
 
   return (
     <div className="space-y-6">
+      {/* Clyde Model Selector */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+          Clyde Model
+        </h3>
+        <div className="space-y-1.5">
+          {MODEL_OPTIONS.map((opt) => {
+            const isSelected = (settings.clyde_model || "opus") === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => updateSetting("clyde_model", opt.value)}
+                className={`w-full flex items-center gap-3 p-3 rounded-[2px] border-2 transition-all text-left ${
+                  isSelected
+                    ? "bg-bg-tertiary border-current"
+                    : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
+                }`}
+                style={isSelected ? { borderColor: opt.color } : undefined}
+              >
+                <div
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ backgroundColor: opt.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-text-primary">
+                    {opt.label}
+                  </p>
+                  <p className="text-[10px] text-text-secondary/60 mt-0.5">
+                    {opt.desc}
+                  </p>
+                </div>
+                {isSelected && (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ color: opt.color }}
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-text-secondary/50 mt-1.5">
+          Changes apply to the next chat session
+        </p>
+      </div>
+
       {/* Self-Edit Toggle */}
       <div>
         <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">

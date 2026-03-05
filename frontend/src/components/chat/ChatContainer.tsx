@@ -416,6 +416,29 @@ export function ChatContainer() {
               }))
             );
           }
+
+          // Refresh orchestrator
+          const orch = msg.data.orchestrator as {
+            id: string;
+            name: string;
+            role: string;
+            model: string;
+            avatar?: string;
+            status?: string;
+          } | undefined;
+          if (orch && orch.id) {
+            setOrchestrator({
+              registryId: orch.id,
+              name: orch.name || "Clyde",
+              role: orch.role || "CEO",
+              model: (orch.model as "opus" | "sonnet" | "haiku") || "opus",
+              avatar: orch.avatar || "",
+              status: (orch.status as "active" | "paused" | "archived") || "active",
+              tools: [],
+              skills: [],
+              team: null,
+            });
+          }
           break;
         }
 

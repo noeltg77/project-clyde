@@ -26,7 +26,7 @@ function ConnectorLines({
   containerRef,
   childIds,
   colorFn,
-  trunkColor = connectorColor.opus,
+  trunkColor = "#C8FF00",
 }: {
   parentRef: React.RefObject<HTMLElement | null>;
   childRefs: React.RefObject<Map<string, HTMLElement>>;
@@ -632,7 +632,8 @@ export function OrgChart() {
     [selectedTeamMembers]
   );
 
-  const clydeAgent: Agent = {
+  const orchestrator = useAgentStore((s) => s.orchestrator);
+  const clydeAgent: Agent = orchestrator || {
     registryId: "clyde-001",
     name: "Clyde",
     role: "CEO",
@@ -717,6 +718,7 @@ export function OrgChart() {
                     containerRef={containerRef}
                     childIds={flatChildIds}
                     colorFn={agentColorFn}
+                    trunkColor={connectorColor[clydeAgent.model] || "#C8FF00"}
                   />
                 )}
 
@@ -853,6 +855,7 @@ export function OrgChart() {
                         containerRef={containerRef}
                         childIds={teamChildIds}
                         colorFn={teamOverviewColorFn}
+                        trunkColor={connectorColor[clydeAgent.model] || "#C8FF00"}
                       />
                     )}
 

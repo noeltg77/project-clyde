@@ -3,26 +3,35 @@
 import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { useChatStore } from "@/stores/chat-store-provider";
+import { useAgentStore } from "@/stores/agent-store-provider";
 import { MessageBubble } from "./MessageBubble";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
 
 /* ─── Thinking indicator — shown while waiting for Clyde's first chunk ─── */
 function ThinkingIndicator() {
+  const orchestrator = useAgentStore((s) => s.orchestrator);
+  const clydeModel = orchestrator?.model || "opus";
   const letters = "Thinking".split("");
 
   return (
     <div className="flex gap-3 mb-4">
       <AgentAvatar
-        src="/avatars/clyde.jpeg"
+        src={orchestrator?.avatar || "/avatars/clyde.jpeg"}
         name="Clyde"
         size={40}
-        modelTier="opus"
+        modelTier={clydeModel}
       />
       <div className="flex-1 max-w-[80%]">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-sm font-semibold text-text-primary">Clyde</span>
         </div>
-        <div className="bg-bg-secondary border-l-2 border-accent-primary rounded-[2px] px-4 py-3">
+        <div className={`bg-bg-secondary border-l-2 rounded-[2px] px-4 py-3 ${
+          clydeModel === "opus"
+            ? "border-accent-primary"
+            : clydeModel === "sonnet"
+            ? "border-accent-secondary"
+            : "border-text-secondary/30"
+        }`}>
           <span className="inline-flex" aria-label="Thinking">
             {letters.map((char, i) => (
               <motion.span

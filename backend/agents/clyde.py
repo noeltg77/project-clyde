@@ -35,6 +35,7 @@ from claude_agent_sdk.types import (
 )
 
 from services.registry import load_registry
+from services.settings import load_settings, MODEL_ID_MAP
 from services.supabase_client import save_activity_event
 from agents.tools import registry_mcp_server, init_tools
 
@@ -415,7 +416,7 @@ class ClydeChatManager:
                         k: str(v)[:200] for k, v in tool_input.items()
                     },
                     "agent_name": "Clyde",
-                    "model_tier": "opus",
+                    "model_tier": load_settings(self.working_dir).get("clyde_model", "opus"),
                 },
             })
         except Exception:
@@ -692,8 +693,13 @@ class ClydeChatManager:
         if is_headless:
             logger.info("[INIT] Headless mode — using bypassPermissions")
 
+        # Resolve Clyde's model from user settings
+        settings = load_settings(self.working_dir)
+        clyde_model_tier = settings.get("clyde_model", "opus")
+        clyde_model_id = MODEL_ID_MAP.get(clyde_model_tier, "claude-opus-4-6")
+
         options = ClaudeAgentOptions(
-            model="claude-opus-4-6",
+            model=clyde_model_id,
             system_prompt=system_prompt,
             # Native session resumption: let the CLI manage conversation history
             # and auto-compaction instead of injecting a manual context summary.
@@ -769,7 +775,11 @@ class ClydeChatManager:
                     if delta.get("type") == "text_delta":
                         yield {
                             "type": "assistant_text",
-                            "data": {"text": delta["text"], "streaming": True},
+                            "data": {
+                                "text": delta["text"],
+                                "streaming": True,
+                                "model_tier": load_settings(self.working_dir).get("clyde_model", "opus"),
+                            },
                         }
 
             elif isinstance(message, AssistantMessage):
@@ -777,7 +787,11 @@ class ClydeChatManager:
                     if isinstance(block, TextBlock):
                         yield {
                             "type": "assistant_text",
-                            "data": {"text": block.text, "final": True},
+                            "data": {
+                                "text": block.text,
+                                "final": True,
+                                "model_tier": load_settings(self.working_dir).get("clyde_model", "opus"),
+                            },
                         }
                     elif isinstance(block, ToolUseBlock):
                         # Track as a step

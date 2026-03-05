@@ -1017,6 +1017,16 @@ async def update_registry_settings(body: dict):
         # Validate and coerce individual fields
         updates: dict[str, Any] = {}
 
+        if "clyde_model" in body:
+            model = body["clyde_model"]
+            if model in ("opus", "sonnet", "haiku"):
+                updates["clyde_model"] = model
+                # Also update the orchestrator model in the registry
+                try:
+                    from services.registry import update_agent
+                    update_agent(WORKING_DIR, "clyde-001", {"model": model})
+                except Exception as e:
+                    logger.warning(f"[API] Failed to update orchestrator model in registry: {e}")
         if "self_edit_enabled" in body:
             updates["self_edit_enabled"] = bool(body["self_edit_enabled"])
         if "concurrency_cap" in body:
@@ -2142,7 +2152,8 @@ async def chat_websocket(ws: WebSocket):
                         clyde_embedding = None
 
                     # Include accumulated steps in metadata for persistence
-                    msg_metadata: dict = {"model": "claude-opus-4-6"}
+                    _settings = load_settings(WORKING_DIR)
+                    msg_metadata: dict = {"model": _settings.get("clyde_model", "opus")}
                     if manager._response_steps:
                         msg_metadata["steps"] = manager._response_steps
 
@@ -2270,10 +2281,12 @@ async def chat_websocket(ws: WebSocket):
                     registry = load_registry(WORKING_DIR)
                     agents = registry.get("agents", [])
                     teams = registry.get("teams", [])
+                    orchestrator = registry.get("orchestrator", {})
                     await ws.send_json({
                         "type": "registry_update",
                         "data": {
                             "agent_count": len(agents),
+                            "orchestrator": orchestrator,
                             "agents": [
                                 {
                                     "id": a["id"],

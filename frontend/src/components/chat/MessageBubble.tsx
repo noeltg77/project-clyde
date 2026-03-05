@@ -3,6 +3,7 @@
 import { memo, useState, useMemo } from "react";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
 import { ModelBadge } from "@/components/agents/ModelBadge";
+import { useAgentStore } from "@/stores/agent-store-provider";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
 import { FileAttachmentCard } from "./FileAttachmentCard";
@@ -157,6 +158,8 @@ type MessageBubbleProps = {
 
 export const MessageBubble = memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const orchestrator = useAgentStore((s) => s.orchestrator);
+  const orchestratorModel = orchestrator?.model || "opus";
   const timestamp = new Date(message.createdAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -181,7 +184,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
   const modelTier =
     (message.metadata?.model_tier as "opus" | "sonnet" | "haiku") ||
     (message.agentName === "Clyde" || message.role === "clyde"
-      ? "opus"
+      ? orchestratorModel
       : "sonnet");
 
   // Determine agent role from metadata

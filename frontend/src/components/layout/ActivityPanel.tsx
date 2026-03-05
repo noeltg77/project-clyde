@@ -10,8 +10,10 @@ export function ActivityPanel() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const messages = useChatStore((s) => s.messages);
 
+  const orchestrator = useAgentStore((s) => s.orchestrator);
   const agents = useAgentStore((s) => s.agents);
   const activeAgentIds = useAgentStore((s) => s.activeAgentIds);
+  const clydeModel = orchestrator?.model || "opus";
   // Calculate session cost from messages
   const sessionCostUsd = messages.reduce(
     (total, msg) => total + (msg.costUsd || 0),
@@ -32,10 +34,10 @@ export function ActivityPanel() {
         {/* Clyde — always first */}
         <div className="flex items-center gap-3 p-2 bg-bg-tertiary rounded-[2px]">
           <AgentAvatar
-            src="/avatars/clyde.jpeg"
+            src={orchestrator?.avatar || "/avatars/clyde.jpeg"}
             name="Clyde"
             size={32}
-            modelTier="opus"
+            modelTier={clydeModel}
           />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-text-primary truncate">
@@ -60,7 +62,7 @@ export function ActivityPanel() {
               </span>
             </div>
           </div>
-          <ModelBadge model="opus" />
+          <ModelBadge model={clydeModel} />
         </div>
 
         {/* Subagents */}
