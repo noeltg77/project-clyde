@@ -20,9 +20,23 @@ A multi-agent AI system built on the Claude Agent SDK. Clyde is your personal AI
 
 ---
 
+## Quick Start
+
+```bash
+git clone https://github.com/YOUR_USERNAME/project-clyde.git
+cd project-clyde
+npm run clyde
+```
+
+That's it. On first run, the CLI walks you through everything — credentials, database setup, dependency installation — then starts the app and opens your browser.
+
+Every run after that just launches the app.
+
+---
+
 ## What You'll Need
 
-Before you start, make sure you have the following installed on your computer:
+### Prerequisites
 
 | Requirement | Version | How to check |
 |---|---|---|
@@ -30,323 +44,130 @@ Before you start, make sure you have the following installed on your computer:
 | **Python** | 3.10 or higher | Run `python3 --version` in your terminal |
 | **Git** | Any recent version | Run `git --version` in your terminal |
 
-You'll also need accounts (all have free tiers) for:
+The CLI checks these automatically and will let you know if anything is missing.
 
-- **Anthropic** — powers the AI agents ([console.anthropic.com](https://console.anthropic.com))
-- **OpenAI** — used for message search/embeddings ([platform.openai.com](https://platform.openai.com))
-- **Supabase** — the database ([supabase.com](https://supabase.com))
+### Accounts (all have free tiers)
+
+| Service | What it's for | Where to sign up |
+|---|---|---|
+| **Supabase** | Database | [supabase.com](https://supabase.com) |
+| **Anthropic** | AI agents | [console.anthropic.com](https://console.anthropic.com) |
+| **OpenAI** | Message search / embeddings | [platform.openai.com](https://platform.openai.com) |
+
+### Before you run `npm run clyde`
+
+Have these ready — the setup wizard will ask for them:
+
+1. **Supabase Project URL** — looks like `https://abcdefgh.supabase.co` (Dashboard > Settings > API)
+2. **Supabase Anon Key** — a long string starting with `eyJ` (same page)
+3. **Supabase Service Role Key** — another `eyJ` string (click the eye icon to reveal)
+4. **Supabase Database Password** — the password you set when creating the project
+5. **Anthropic API Key** — starts with `sk-ant-` ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys))
+6. **OpenAI API Key** — starts with `sk-` ([platform.openai.com/api-keys](https://platform.openai.com/api-keys))
+
+> **Tip:** If you haven't created a Supabase project yet, go to [supabase.com](https://supabase.com), click **New Project**, pick a name, set a strong database password (save it!), choose a region, and wait about a minute for it to spin up.
 
 ---
 
-## Step 1: Clone the Repository
+## What the Setup Wizard Does
 
-Open your terminal and run:
+When you run `npm run clyde` for the first time (no `.env.local` file), the CLI will:
+
+1. **Check prerequisites** — verifies Node.js 20+, Python 3.10+, and Git are installed
+2. **Collect credentials** — prompts for your Supabase, Anthropic, and OpenAI keys (passwords are masked)
+3. **Generate `.env.local`** — writes your config file with all the right values (never committed to git)
+4. **Deploy the database schema** — connects directly to your Supabase Postgres instance and creates all 8 tables, functions, and indexes automatically
+5. **Install dependencies** — runs `npm install` for the frontend and sets up a Python virtual environment with all backend packages
+6. **Create the working directory** — sets up the folder structure for agent configs, prompts, memory, and logs
+7. **Launch the app** — starts both the backend (port 8000) and frontend (port 3020), then opens your browser
+
+All credentials are stored locally in `.env.local` and are never transmitted anywhere except directly to your own services.
+
+---
+
+## Verify Your Setup
+
+Once the app opens in your browser:
+
+1. Click the **Settings** icon (gear icon)
+2. Under the **System** tab, check that the status indicators show green dots next to:
+   - Anthropic API Key
+   - Supabase Connection
+   - OpenAI API Key
+3. If any show red, check the corresponding values in your `.env.local` file, then restart with `npm run clyde`
+
+Once all three are green, close settings and create your first chat session.
+
+---
+
+## Day-to-Day Usage
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/project-clyde.git
-cd project-clyde
+npm run clyde
+```
+
+This starts both the backend and frontend, with color-coded logs in your terminal. Press `Ctrl+C` to stop everything.
+
+You can also run the services individually if you prefer separate terminals:
+
+| Command | What it does |
+|---|---|
+| `npm run clyde` | Start everything (recommended) |
+| `npm run dev:frontend` | Start only the frontend (port 3020) |
+| `npm run dev:backend` | Start only the backend (port 8000) |
+| `npm run lint` | Check frontend code for errors |
+
+---
+
+## Project Structure
+
+```
+project-clyde/
+├── cli/               CLI setup wizard and app launcher
+│   └── clyde.js       Entry point for `npm run clyde`
+├── db/                Database schema
+│   └── schema.sql     Idempotent SQL (safe to re-run)
+├── frontend/          Next.js web interface (port 3020)
+├── backend/           FastAPI server + AI agents (port 8000)
+├── working/           Runtime data (agent registry, prompts, memory)
+├── .env.example       Template for environment variables
+└── .env.local         Your local config (not committed to git)
 ```
 
 ---
 
-## Step 2: Set Up Supabase (Free Database)
+## Manual Setup (Alternative)
 
-Supabase is a hosted database service. You'll create a free project and then run some SQL to set up the tables Clyde needs.
+If you prefer to set things up step by step instead of using the CLI wizard, follow these instructions.
 
-### 2.1 — Create a Supabase Account
+<details>
+<summary>Click to expand manual setup steps</summary>
 
-1. Go to [supabase.com](https://supabase.com) and click **Start your project**
-2. Sign up with your GitHub account (or email)
-3. Once logged in, click **New Project**
-4. Fill in the details:
-   - **Name:** anything you like (e.g. `project-clyde`)
-   - **Database Password:** pick a strong password and save it somewhere safe
-   - **Region:** choose the one closest to you
-5. Click **Create new project** and wait for it to finish setting up (takes about 1 minute)
+### 1. Set Up Supabase
 
-### 2.2 — Get Your Supabase Keys
+1. Create a project at [supabase.com](https://supabase.com)
+2. In the dashboard, click **SQL Editor** > **New query**
+3. Copy the contents of `db/schema.sql` and paste them into the editor
+4. Click **Run** — you should see "Success. No rows returned"
 
-Once your project is ready:
-
-1. In the Supabase dashboard, click **Settings** (gear icon) in the left sidebar
-2. Click **API** under the Configuration section
-3. You'll see three things you need — keep this page open, you'll copy these values in Step 3:
-   - **Project URL** — looks like `https://abcdefgh.supabase.co`
-   - **anon public key** — a long string starting with `eyJ`
-   - **service_role secret key** — another long string starting with `eyJ` (click the eye icon to reveal it)
-
-### 2.3 — Run the Database Setup SQL
-
-Now you need to create the tables. In your Supabase dashboard:
-
-1. Click **SQL Editor** in the left sidebar
-2. Click **New query**
-3. Copy and paste the **entire** SQL block below into the editor
-4. Click **Run** (or press Ctrl+Enter / Cmd+Enter)
-5. You should see "Success. No rows returned" — that means it worked
-
-```sql
--- ============================================
--- Project Clyde: Database Setup
--- Run this entire block in the Supabase SQL Editor
--- ============================================
-
--- Enable the vector extension (required for message search)
-create extension if not exists vector with schema extensions;
-
--- ============================================
--- Chat Sessions
--- ============================================
-create table public.chat_sessions (
-  id uuid primary key default gen_random_uuid(),
-  title text not null default 'New Chat',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  metadata jsonb default '{}'::jsonb
-);
-
-create index idx_chat_sessions_updated_at on public.chat_sessions (updated_at desc);
-
-create or replace function update_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-create trigger trg_chat_sessions_updated_at
-  before update on public.chat_sessions
-  for each row execute function update_updated_at();
-
--- ============================================
--- Chat Messages (with vector embeddings)
--- ============================================
-create table public.chat_messages (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.chat_sessions(id) on delete cascade,
-  role text not null check (role in ('user', 'clyde', 'agent')),
-  agent_id text,
-  agent_name text,
-  content text not null,
-  embedding extensions.vector(1536),
-  token_count integer default 0,
-  cost_usd numeric(10, 6) default 0,
-  metadata jsonb default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create index idx_chat_messages_session_id on public.chat_messages (session_id, created_at);
-
-create index idx_chat_messages_embedding on public.chat_messages
-  using hnsw (embedding extensions.vector_cosine_ops)
-  with (m = 16, ef_construction = 64);
-
--- ============================================
--- System Prompt History
--- ============================================
-create table public.system_prompt_history (
-  id uuid primary key default gen_random_uuid(),
-  agent_id text not null,
-  previous_version text,
-  new_version text not null,
-  reason text,
-  changed_by text not null check (changed_by in ('clyde', 'user')),
-  created_at timestamptz not null default now()
-);
-
-create index idx_system_prompt_history_agent on public.system_prompt_history (agent_id, created_at desc);
-
--- ============================================
--- Vector Similarity Search Function
--- ============================================
-create or replace function match_chat_messages(
-  query_embedding extensions.vector(1536),
-  match_threshold float default 0.7,
-  match_count int default 10,
-  filter_session_id uuid default null
-)
-returns table (
-  id uuid,
-  session_id uuid,
-  role text,
-  agent_name text,
-  content text,
-  similarity float,
-  created_at timestamptz
-)
-language plpgsql
-as $$
-begin
-  return query
-  select
-    cm.id,
-    cm.session_id,
-    cm.role,
-    cm.agent_name,
-    cm.content,
-    (1 - (cm.embedding <=> query_embedding))::float as similarity,
-    cm.created_at
-  from public.chat_messages cm
-  where
-    cm.embedding is not null
-    and (1 - (cm.embedding <=> query_embedding)) > match_threshold
-    and (filter_session_id is null or cm.session_id = filter_session_id)
-  order by cm.embedding <=> query_embedding
-  limit match_count;
-end;
-$$;
-
--- ============================================
--- Activity Events (agent activity feed)
--- ============================================
-create table if not exists activity_events (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references chat_sessions(id) on delete cascade,
-  agent_id text not null,
-  agent_name text not null,
-  event_type text not null,
-  description text,
-  metadata jsonb default '{}',
-  created_at timestamptz default now()
-);
-
--- ============================================
--- Permission Log (tool permission decisions)
--- ============================================
-create table if not exists permission_log (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references chat_sessions(id) on delete cascade,
-  agent_id text,
-  agent_name text,
-  tool_name text not null,
-  tool_input jsonb,
-  decision text not null,
-  decided_at timestamptz default now()
-);
-
-create index if not exists idx_activity_events_session
-  on activity_events(session_id, created_at desc);
-
-create index if not exists idx_permission_log_session
-  on permission_log(session_id);
-
--- ============================================
--- Proactive Insights
--- ============================================
-create table if not exists public.proactive_insights (
-  id uuid primary key default gen_random_uuid(),
-  insight_type text not null,
-  title text not null,
-  description text not null,
-  severity text not null default 'info',
-  data jsonb default '{}',
-  status text not null default 'pending',
-  snoozed_until timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_proactive_insights_status
-  on proactive_insights(status, created_at desc);
-
-create index if not exists idx_proactive_insights_type
-  on proactive_insights(insight_type);
-
-create or replace function update_proactive_insights_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-create trigger trg_proactive_insights_updated_at
-  before update on proactive_insights
-  for each row
-  execute function update_proactive_insights_updated_at();
-
--- ============================================
--- Task Board (Kanban) — Columns
--- ============================================
-create table if not exists public.task_columns (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  position integer not null default 0,
-  created_at timestamptz not null default now()
-);
-
--- Seed default columns
-insert into public.task_columns (name, position) values
-  ('Draft', 0),
-  ('Not Started', 1),
-  ('In Progress', 2),
-  ('Complete', 3);
-
--- ============================================
--- Task Board (Kanban) — Tasks
--- ============================================
-create table if not exists public.tasks (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  description text not null default '',
-  column_id uuid not null references public.task_columns(id) on delete cascade,
-  position integer not null default 0,
-  assignee_type text,
-  assignee_id text,
-  assignee_name text,
-  linked_docs jsonb default '[]'::jsonb,
-  session_id uuid references public.chat_sessions(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_tasks_column_id
-  on public.tasks(column_id, position);
-
-create index if not exists idx_tasks_updated_at
-  on public.tasks(updated_at desc);
-
-create or replace function update_tasks_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-create trigger trg_tasks_updated_at
-  before update on public.tasks
-  for each row
-  execute function update_tasks_updated_at();
-```
-
-If you see any errors, make sure you copied the entire block from the very first line (`create extension`) to the very last line.
-
----
-
-## Step 3: Set Up Your Environment Variables
-
-Environment variables are how the app knows your API keys and database details. These are stored in a file that stays on your machine and is never uploaded to GitHub.
-
-1. In the root `project-clyde` folder, copy the example file:
+### 2. Configure Environment Variables
 
 ```bash
 cp .env.example .env.local
 ```
 
-2. Open `.env.local` in any text editor and fill in each value:
+Open `.env.local` and fill in each value:
 
 ```env
-# Anthropic — get your key from https://console.anthropic.com/settings/keys
+# Anthropic — https://console.anthropic.com/settings/keys
 ANTHROPIC_API_KEY=sk-ant-paste-your-key-here
 
-# Supabase — from Step 2.2 above
+# Supabase — Dashboard > Settings > API
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=paste-your-anon-key-here
 SUPABASE_SERVICE_ROLE_KEY=paste-your-service-role-key-here
 
-# OpenAI — get your key from https://platform.openai.com/api-keys
+# OpenAI — https://platform.openai.com/api-keys
 OPENAI_API_KEY=sk-proj-paste-your-key-here
 
 # Backend (leave these as-is)
@@ -357,30 +178,20 @@ NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000
 WORKING_DIR=/full/path/to/project-clyde/working
 ```
 
-To find your full path for `WORKING_DIR`, run this in your terminal from the project folder:
+To find your full path for `WORKING_DIR`:
 
 ```bash
 echo "$(pwd)/working"
 ```
 
-Copy the output and paste it as the `WORKING_DIR` value.
-
----
-
-## Step 4: Install the Frontend
+### 3. Install the Frontend
 
 ```bash
 cd frontend
 npm install
 ```
 
-This will download all the JavaScript dependencies. It may take a minute or two.
-
----
-
-## Step 5: Install the Backend
-
-Open a **new terminal window** (keep the first one open) and run:
+### 4. Install the Backend
 
 ```bash
 cd backend
@@ -389,16 +200,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**What this does:**
-- Creates an isolated Python environment (so it doesn't affect other Python projects)
-- Activates that environment
-- Installs all the Python libraries Clyde needs
-
----
-
-## Step 6: Start the App
-
-You need **two terminal windows** running at the same time.
+### 5. Start the App
 
 **Terminal 1 — Backend:**
 
@@ -408,12 +210,6 @@ source .venv/bin/activate
 bash run.sh
 ```
 
-You should see output like:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000
-INFO:     Started reloader process
-```
-
 **Terminal 2 — Frontend:**
 
 ```bash
@@ -421,67 +217,36 @@ cd frontend
 npm run dev
 ```
 
-You should see output like:
-```
-▲ Next.js 16.x.x
-- Local: http://localhost:3020
-```
+Open your browser to **http://localhost:3020**
 
-Now open your browser and go to **http://localhost:3020**
-
----
-
-## Step 7: Add Your API Keys in Settings
-
-Before you create your first chat session, you need to verify your API keys are connected:
-
-1. Open Clyde in your browser at `http://localhost:3020`
-2. Click the **Settings** icon (gear icon)
-3. Under the **System** tab, check that the status indicators show green dots next to:
-   - Anthropic API Key
-   - Supabase Connection
-   - OpenAI API Key
-4. If any show red, double-check the corresponding values in your `.env.local` file and restart both terminals
-
-Once all three are green, close settings and create your first chat session.
-
----
-
-## Project Structure
-
-```
-project-clyde/
-├── frontend/          Next.js web interface (port 3020)
-├── backend/           FastAPI server + AI agents (port 8000)
-├── supabase/          Database migration files (reference only)
-├── working/           Runtime data (agent registry, prompts, memory)
-├── .env.example       Template for environment variables
-└── .env.local         Your local config (not committed to git)
-```
+</details>
 
 ---
 
 ## Common Issues
 
 ### "Cannot connect to backend"
-Make sure the backend is running in its own terminal. Check that you see the `Uvicorn running on http://127.0.0.1:8000` message.
+Make sure the backend is running. If using `npm run clyde`, check the terminal for backend errors (prefixed with `[backend]` in teal). If running manually, verify you see `Uvicorn running on http://127.0.0.1:8000`.
+
+### Database schema deployment failed
+- **Connection refused** — check your Supabase URL is correct and the project is active
+- **Password authentication failed** — reset your database password in Supabase Dashboard > Settings > Database
+- **Already exists** — this is fine; the schema is idempotent and safe to re-run
 
 ### "Module not found" errors in the backend
-Make sure you activated the virtual environment first:
+If running manually, make sure you activated the virtual environment:
 ```bash
 source .venv/bin/activate
 ```
+If using `npm run clyde`, the CLI handles this automatically.
 
 ### "node: command not found" or wrong Node version
 Install Node.js 20+ from [nodejs.org](https://nodejs.org). Pick the LTS version.
 
 ### "python3: command not found"
 - **Mac:** Run `brew install python3` (requires [Homebrew](https://brew.sh))
-- **Windows:** Download from [python.org](https://www.python.org/downloads/) and make sure to check "Add to PATH" during install
+- **Windows:** Download from [python.org](https://www.python.org/downloads/) and check "Add to PATH" during install
 - **Linux:** Run `sudo apt install python3 python3-venv`
-
-### Supabase SQL errors
-Make sure you copied the entire SQL block. The most common issue is missing the first line (`create extension if not exists vector with schema extensions;`) — this enables the vector search feature that Clyde relies on.
 
 ### Red dots in Settings
 This means one or more API keys are missing or incorrect. Open `.env.local` and check:
@@ -489,21 +254,4 @@ This means one or more API keys are missing or incorrect. Open `.env.local` and 
 - No quotes around the values
 - Keys are pasted completely (no missing characters)
 
-After editing `.env.local`, restart both the backend and frontend.
-
----
-
-## Stopping the App
-
-Press `Ctrl+C` in each terminal window to stop the frontend and backend.
-
----
-
-## Useful Commands
-
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start the frontend (from `frontend/` folder) |
-| `bash run.sh` | Start the backend (from `backend/` folder) |
-| `npm run build` | Build the frontend for production |
-| `npm run lint` | Check frontend code for errors |
+After editing `.env.local`, restart with `npm run clyde`.
