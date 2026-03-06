@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.patreon.com/cw/ProjectClyde">
-    <img src="https://img.shields.io/badge/Patreon-Support_Project_Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
+    <img src="https://img.shields.io/badge/Patreon-Support%20Project%20Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
   </a>
   &nbsp;
   <img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js" alt="Next.js 15" />
@@ -33,8 +33,8 @@ Clyde is a multi-agent AI system where a lead agent delegates tasks to specialis
 
 ## Key Features
 
-| | Feature | Description |
-|---|---|---|
+| Feature | Description |
+|---|---|
 | **Agent Delegation** | Lead agent routes tasks to specialised sub-agents automatically |
 | **Persistent Memory** | Conversations are stored with vector embeddings for semantic recall |
 | **Self-Improving Prompts** | Agents refine their own system prompts over time |
@@ -418,25 +418,11 @@ Check `.env.local` for: no extra spaces around `=`, no quotes around values, key
 
 ---
 
-## Roadmap
-
-Project Clyde is being built in phases:
-
-- [x] **Phase 1** — Foundation: Chat interface, Supabase storage, basic agent
-- [ ] **Phase 2** — Sub-agent system, org chart, permissions, activity feed
-- [ ] **Phase 3** — Memory, search, multi-session, skills
-- [ ] **Phase 4** — Agent teams, automation, cost tracking
-- [ ] **Phase 5** — Self-improvement, prompt versioning, polish
-
-> Want to influence the roadmap? [Patreon members](https://www.patreon.com/cw/ProjectClyde) help shape what gets built next.
-
----
-
 ## Support the Project
 
 <p align="center">
   <a href="https://www.patreon.com/cw/ProjectClyde">
-    <img src="https://img.shields.io/badge/Become_a_Patron-Support_Project_Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Become a Patron" />
+    <img src="https://img.shields.io/badge/Become%20a%20Patron-Support%20Project%20Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Become a Patron" />
   </a>
 </p>
 
