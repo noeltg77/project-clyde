@@ -1,69 +1,107 @@
-# Project Clyde
+<p align="center">
+  <img src="docs/images/clyde-banner.png" alt="Project Clyde — Clyde Corp HQ" width="100%" />
+</p>
 
-A multi-agent AI system built on the Claude Agent SDK. Clyde is your personal AI assistant that can delegate tasks to specialised sub-agents, remember past conversations, and improve its own prompts over time.
+<h1 align="center">Project Clyde</h1>
+
+<p align="center">
+  <strong>Your personal AI workforce, powered by the Claude Agent SDK.</strong><br/>
+  Multi-agent system with delegated sub-agents, persistent memory, and self-improving prompts.
+</p>
+
+<p align="center">
+  <a href="https://www.patreon.com/cw/ProjectClyde">
+    <img src="https://img.shields.io/badge/Patreon-Support_Project_Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
+  </a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js" alt="Next.js 15" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Claude_Agent_SDK-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Agent SDK" />
+</p>
 
 ---
 
-## What You'll Need
+## What is Project Clyde?
 
-Before you start, make sure you have the following installed on your computer:
+Clyde is a multi-agent AI system where a lead agent delegates tasks to specialised sub-agents, remembers past conversations, and improves its own prompts over time. Think of it as a virtual AI team that works for you.
 
-| Requirement | Version | How to check |
+> **Early access & exclusive updates** — Patreon members get access to early dev builds, vote on the roadmap, and get behind-the-scenes updates as the project evolves.
+>
+> <a href="https://www.patreon.com/cw/ProjectClyde"><strong>Join on Patreon &rarr;</strong></a>
+
+---
+
+## Key Features
+
+| | Feature | Description |
 |---|---|---|
-| **Node.js** | 20 or higher | Run `node --version` in your terminal |
-| **Python** | 3.10 or higher | Run `python3 --version` in your terminal |
-| **Git** | Any recent version | Run `git --version` in your terminal |
-
-You'll also need accounts (all have free tiers) for:
-
-- **Anthropic** — powers the AI agents ([console.anthropic.com](https://console.anthropic.com))
-- **OpenAI** — used for message search/embeddings ([platform.openai.com](https://platform.openai.com))
-- **Supabase** — the database ([supabase.com](https://supabase.com))
+| **Agent Delegation** | Lead agent routes tasks to specialised sub-agents automatically |
+| **Persistent Memory** | Conversations are stored with vector embeddings for semantic recall |
+| **Self-Improving Prompts** | Agents refine their own system prompts over time |
+| **Activity Feed** | Real-time visibility into what each agent is doing |
+| **Permission System** | Approve or deny tool use before agents act |
+| **Brutalist UI** | Dark theme with acid-green accents — built different |
 
 ---
 
-## Step 1: Clone the Repository
+## Tech Stack
 
-Open your terminal and run:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/project-clyde.git
-cd project-clyde
+```
+Frontend     Next.js 15  ·  Tailwind v4  ·  Zustand  ·  Motion
+Backend      FastAPI  ·  Claude Agent SDK  ·  Supabase  ·  OpenAI
+Infra        WebSocket (real-time)  ·  Vector search (pgvector)
 ```
 
 ---
 
-## Step 2: Set Up Supabase (Free Database)
+## Prerequisites
 
-Supabase is a hosted database service. You'll create a free project and then run some SQL to set up the tables Clyde needs.
+| Requirement | Version | Check |
+|---|---|---|
+| **Node.js** | 20+ | `node --version` |
+| **Python** | 3.10+ | `python3 --version` |
+| **Git** | Any recent | `git --version` |
 
-### 2.1 — Create a Supabase Account
+You'll also need accounts (all have free tiers):
+
+- **Anthropic** — powers the AI agents ([console.anthropic.com](https://console.anthropic.com))
+- **OpenAI** — message search & embeddings ([platform.openai.com](https://platform.openai.com))
+- **Supabase** — the database ([supabase.com](https://supabase.com))
+
+---
+
+## Quick Start
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/noeltg77/project-clyde.git
+cd project-clyde
+```
+
+### 2. Set up Supabase
+
+#### 2.1 — Create a Supabase project
 
 1. Go to [supabase.com](https://supabase.com) and click **Start your project**
-2. Sign up with your GitHub account (or email)
-3. Once logged in, click **New Project**
-4. Fill in the details:
-   - **Name:** anything you like (e.g. `project-clyde`)
-   - **Database Password:** pick a strong password and save it somewhere safe
-   - **Region:** choose the one closest to you
-5. Click **Create new project** and wait for it to finish setting up (takes about 1 minute)
+2. Sign up with GitHub (or email)
+3. Click **New Project** and fill in:
+   - **Name:** `project-clyde` (or anything you like)
+   - **Database Password:** pick a strong one and save it
+   - **Region:** closest to you
+4. Click **Create new project** and wait ~1 minute
 
-### 2.2 — Get Your Supabase Keys
+#### 2.2 — Get your keys
 
-Once your project is ready:
+1. In the Supabase dashboard, go to **Settings** > **API**
+2. Note these three values (you'll need them in step 3):
+   - **Project URL** — `https://abcdefgh.supabase.co`
+   - **anon public key** — starts with `eyJ`
+   - **service_role secret key** — click the eye icon to reveal
 
-1. In the Supabase dashboard, click **Settings** (gear icon) in the left sidebar
-2. Click **API** under the Configuration section
-3. You'll see three things you need — keep this page open, you'll copy these values in Step 3:
-   - **Project URL** — looks like `https://abcdefgh.supabase.co`
-   - **anon public key** — a long string starting with `eyJ`
-   - **service_role secret key** — another long string starting with `eyJ` (click the eye icon to reveal it)
+#### 2.3 — Run the database setup SQL
 
-### 2.3 — Run the Database Setup SQL
-
-Now you need to create the tables. In your Supabase dashboard:
-
-1. Click **SQL Editor** in the left sidebar
+1. Click **SQL Editor** in the sidebar
 2. Click **New query**
 3. Copy and paste the **entire** SQL block below into the editor
 4. Click **Run** (or press Ctrl+Enter / Cmd+Enter)
@@ -251,129 +289,61 @@ create trigger trg_proactive_insights_updated_at
   execute function update_proactive_insights_updated_at();
 ```
 
-If you see any errors, make sure you copied the entire block from the very first line (`create extension`) to the very last line.
+> **If you see any errors**, make sure you copied the entire block from the very first line (`create extension`) to the very last line.
 
----
-
-## Step 3: Set Up Your Environment Variables
-
-Environment variables are how the app knows your API keys and database details. These are stored in a file that stays on your machine and is never uploaded to GitHub.
-
-1. In the root `project-clyde` folder, copy the example file:
+### 3. Configure environment variables
 
 ```bash
 cp .env.example .env.local
 ```
 
-2. Open `.env.local` in any text editor and fill in each value:
+Open `.env.local` and fill in your keys:
 
 ```env
-# Anthropic — get your key from https://console.anthropic.com/settings/keys
+# Anthropic — https://console.anthropic.com/settings/keys
 ANTHROPIC_API_KEY=sk-ant-paste-your-key-here
 
-# Supabase — from Step 2.2 above
+# Supabase — from step 2.2
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=paste-your-anon-key-here
 SUPABASE_SERVICE_ROLE_KEY=paste-your-service-role-key-here
 
-# OpenAI — get your key from https://platform.openai.com/api-keys
+# OpenAI — https://platform.openai.com/api-keys
 OPENAI_API_KEY=sk-proj-paste-your-key-here
 
-# Backend (leave these as-is)
+# Backend (leave as-is)
 BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000
 
-# Working directory — replace with the actual path on YOUR computer
+# Working directory — run: echo "$(pwd)/working"
 WORKING_DIR=/full/path/to/project-clyde/working
 ```
 
-To find your full path for `WORKING_DIR`, run this in your terminal from the project folder:
+### 4. Install dependencies
 
 ```bash
-echo "$(pwd)/working"
+# Frontend
+cd frontend && npm install && cd ..
+
+# Backend
+cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ..
 ```
 
-Copy the output and paste it as the `WORKING_DIR` value.
+### 5. Start the app
 
----
-
-## Step 4: Install the Frontend
-
-```bash
-cd frontend
-npm install
-```
-
-This will download all the JavaScript dependencies. It may take a minute or two.
-
----
-
-## Step 5: Install the Backend
-
-Open a **new terminal window** (keep the first one open) and run:
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**What this does:**
-- Creates an isolated Python environment (so it doesn't affect other Python projects)
-- Activates that environment
-- Installs all the Python libraries Clyde needs
-
----
-
-## Step 6: Start the App
-
-You need **two terminal windows** running at the same time.
+You need **two terminals** running simultaneously:
 
 **Terminal 1 — Backend:**
-
 ```bash
-cd backend
-source .venv/bin/activate
-bash run.sh
-```
-
-You should see output like:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000
-INFO:     Started reloader process
+cd backend && source .venv/bin/activate && bash run.sh
 ```
 
 **Terminal 2 — Frontend:**
-
 ```bash
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
-You should see output like:
-```
-▲ Next.js 16.x.x
-- Local: http://localhost:3020
-```
-
-Now open your browser and go to **http://localhost:3020**
-
----
-
-## Step 7: Add Your API Keys in Settings
-
-Before you create your first chat session, you need to verify your API keys are connected:
-
-1. Open Clyde in your browser at `http://localhost:3020`
-2. Click the **Settings** icon (gear icon)
-3. Under the **System** tab, check that the status indicators show green dots next to:
-   - Anthropic API Key
-   - Supabase Connection
-   - OpenAI API Key
-4. If any show red, double-check the corresponding values in your `.env.local` file and restart both terminals
-
-Once all three are green, close settings and create your first chat session.
+Open **http://localhost:3020** and verify all status indicators are green in **Settings**.
 
 ---
 
@@ -383,57 +353,99 @@ Once all three are green, close settings and create your first chat session.
 project-clyde/
 ├── frontend/          Next.js web interface (port 3020)
 ├── backend/           FastAPI server + AI agents (port 8000)
-├── supabase/          Database migration files (reference only)
-├── working/           Runtime data (agent registry, prompts, memory)
+├── supabase/          Database migration files
+├── working/           Runtime data (registry, prompts, memory)
+├── docs/              Documentation and images
 ├── .env.example       Template for environment variables
-└── .env.local         Your local config (not committed to git)
+└── .env.local         Your local config (not committed)
 ```
-
----
-
-## Common Issues
-
-### "Cannot connect to backend"
-Make sure the backend is running in its own terminal. Check that you see the `Uvicorn running on http://127.0.0.1:8000` message.
-
-### "Module not found" errors in the backend
-Make sure you activated the virtual environment first:
-```bash
-source .venv/bin/activate
-```
-
-### "node: command not found" or wrong Node version
-Install Node.js 20+ from [nodejs.org](https://nodejs.org). Pick the LTS version.
-
-### "python3: command not found"
-- **Mac:** Run `brew install python3` (requires [Homebrew](https://brew.sh))
-- **Windows:** Download from [python.org](https://www.python.org/downloads/) and make sure to check "Add to PATH" during install
-- **Linux:** Run `sudo apt install python3 python3-venv`
-
-### Supabase SQL errors
-Make sure you copied the entire SQL block. The most common issue is missing the first line (`create extension if not exists vector with schema extensions;`) — this enables the vector search feature that Clyde relies on.
-
-### Red dots in Settings
-This means one or more API keys are missing or incorrect. Open `.env.local` and check:
-- No extra spaces around the `=` sign
-- No quotes around the values
-- Keys are pasted completely (no missing characters)
-
-After editing `.env.local`, restart both the backend and frontend.
-
----
-
-## Stopping the App
-
-Press `Ctrl+C` in each terminal window to stop the frontend and backend.
 
 ---
 
 ## Useful Commands
 
-| Command | What it does |
+| Command | Description |
 |---|---|
-| `npm run dev` | Start the frontend (from `frontend/` folder) |
-| `bash run.sh` | Start the backend (from `backend/` folder) |
-| `npm run build` | Build the frontend for production |
-| `npm run lint` | Check frontend code for errors |
+| `npm run dev` | Start frontend (from `frontend/`) |
+| `bash run.sh` | Start backend (from `backend/`) |
+| `npm run build` | Production build |
+| `npm run lint` | Lint check |
+
+---
+
+## Troubleshooting
+
+<details>
+<summary><strong>"Cannot connect to backend"</strong></summary>
+
+Make sure the backend terminal shows `Uvicorn running on http://127.0.0.1:8000`. Restart with `bash run.sh` if needed.
+</details>
+
+<details>
+<summary><strong>"Module not found" in backend</strong></summary>
+
+Activate the virtual environment first:
+```bash
+source .venv/bin/activate
+```
+</details>
+
+<details>
+<summary><strong>Wrong Node.js version</strong></summary>
+
+Install Node.js 20+ from [nodejs.org](https://nodejs.org) (LTS).
+</details>
+
+<details>
+<summary><strong>"python3: command not found"</strong></summary>
+
+- **Mac:** `brew install python3`
+- **Windows:** Download from [python.org](https://www.python.org/downloads/) — check "Add to PATH"
+- **Linux:** `sudo apt install python3 python3-venv`
+</details>
+
+<details>
+<summary><strong>Supabase SQL errors</strong></summary>
+
+Make sure you copied the entire SQL block including the first line: `create extension if not exists vector with schema extensions;`
+</details>
+
+<details>
+<summary><strong>Red dots in Settings</strong></summary>
+
+Check `.env.local` for: no extra spaces around `=`, no quotes around values, keys fully pasted. Restart both terminals after editing.
+</details>
+
+---
+
+## Roadmap
+
+Project Clyde is being built in phases:
+
+- [x] **Phase 1** — Foundation: Chat interface, Supabase storage, basic agent
+- [ ] **Phase 2** — Sub-agent system, org chart, permissions, activity feed
+- [ ] **Phase 3** — Memory, search, multi-session, skills
+- [ ] **Phase 4** — Agent teams, automation, cost tracking
+- [ ] **Phase 5** — Self-improvement, prompt versioning, polish
+
+> Want to influence the roadmap? [Patreon members](https://www.patreon.com/cw/ProjectClyde) help shape what gets built next.
+
+---
+
+## Support the Project
+
+<p align="center">
+  <a href="https://www.patreon.com/cw/ProjectClyde">
+    <img src="https://img.shields.io/badge/Become_a_Patron-Support_Project_Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Become a Patron" />
+  </a>
+</p>
+
+<p align="center">
+  Early dev builds &nbsp;·&nbsp; Exclusive updates &nbsp;·&nbsp; Shape the roadmap
+</p>
+
+---
+
+<p align="center">
+  Built by <a href="https://github.com/noeltg77">WireNexus</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+</p>
