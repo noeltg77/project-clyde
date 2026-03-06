@@ -433,5 +433,5 @@ Check `.env.local` for: no extra spaces around `=`, no quotes around values, key
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/noeltg77">WireNexus</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+  Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
 </p>
