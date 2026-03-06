@@ -24,7 +24,7 @@ A multi-agent AI system built on the Claude Agent SDK. Clyde is your personal AI
 
 ```bash
 git clone https://github.com/noeltg77/Project-Clyde-EA.git
-cd project-clyde
+cd Project-Clyde-EA
 npm run clyde
 ```
 
