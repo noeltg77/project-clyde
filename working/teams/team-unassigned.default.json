@@ -1,0 +1,8 @@
+{
+  "id": "team-unassigned",
+  "name": "Unassigned",
+  "color": "#6B7280",
+  "workflows": [],
+  "delegation_notes": "Agents here have not yet been assigned to a team. Review their roles and assign to the appropriate team using assign_agent_to_team. When delegating, check if a suitable team exists before using an unassigned agent directly.",
+  "members": []
+}

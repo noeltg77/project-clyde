@@ -1226,12 +1226,22 @@ async def export_system():
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Registry
+        # Registry (aggregated view for backward compat)
         try:
             registry = load_registry(WORKING_DIR)
             bundle["registry"] = registry
         except Exception:
             bundle["registry"] = {}
+
+        # Team files (individual JSON files from teams/ directory)
+        teams_dir = os.path.join(WORKING_DIR, "teams")
+        if os.path.isdir(teams_dir):
+            team_files = {}
+            for fname in os.listdir(teams_dir):
+                if fname.endswith(".json") and not fname.endswith(".default.json"):
+                    with open(os.path.join(teams_dir, fname), "r") as f:
+                        team_files[fname] = json.load(f)
+            bundle["team_files"] = team_files
 
         # Schedules
         schedules_path = os.path.join(WORKING_DIR, "schedules.json")
@@ -1300,7 +1310,7 @@ async def import_system(body: dict):
         os.makedirs(backup_dir, exist_ok=True)
 
         # Backup current files
-        for subdir in ["prompts", "skills", "memory"]:
+        for subdir in ["prompts", "skills", "memory", "teams"]:
             src_dir = os.path.join(WORKING_DIR, subdir)
             dst_dir = os.path.join(backup_dir, subdir)
             if os.path.isdir(src_dir):
@@ -1313,7 +1323,7 @@ async def import_system(body: dict):
                         with open(os.path.join(dst_dir, fname), "w") as f:
                             f.write(content)
 
-        for fname in ["registry.json", "schedules.json", "triggers.json"]:
+        for fname in ["schedules.json", "triggers.json"]:
             src = os.path.join(WORKING_DIR, fname)
             if os.path.exists(src):
                 with open(src, "r") as f:

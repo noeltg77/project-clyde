@@ -450,7 +450,7 @@ async function installDependencies() {
 
 // ─── Working Directory Setup ────────────────────────────────────────
 function ensureWorkingDir() {
-  const dirs = ['agents', 'prompts', 'memory', 'logs', 'output', 'skills', 'uploads'];
+  const dirs = ['agents', 'prompts', 'memory', 'logs', 'output', 'skills', 'uploads', 'teams', 'workflows'];
   for (const dir of dirs) {
     const p = path.join(WORKING_DIR, dir);
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
