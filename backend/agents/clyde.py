@@ -105,14 +105,24 @@ class ClydeChatManager:
         init_tools(working_dir)
 
     def _load_system_prompt(self) -> str:
+        """Load the system prompt — ONLY the clyde-system.md content.
+
+        All dynamic context (working directory, timestamp, skills) is moved
+        to volatile context and prepended to the first user message instead.
+        This keeps the system prompt cache-friendly and stable.
+        """
         prompt_path = os.path.join(self.working_dir, "prompts", "clyde-system.md")
         with open(prompt_path, "r") as f:
             prompt = f.read()
 
-        # Inject the actual working directory path so Clyde knows where to save files
+        # Build volatile context — everything that was previously injected
+        # into the system prompt now goes to the first user message.
+        volatile_parts: list[str] = []
+
+        # Working directory info
         abs_working = str(Path(self.working_dir).resolve())
-        prompt += (
-            "\n\n## Working Directory\n\n"
+        volatile_parts.append(
+            f"## Working Directory\n\n"
             f"Your working directory is: `{abs_working}`\n\n"
             "All file operations (Read, Write, Edit, Glob, Grep) MUST use paths within "
             "this directory. Use this absolute path when saving files — for example:\n"
@@ -123,48 +133,30 @@ class ClydeChatManager:
             "Never use `~/`, `/Users/`, `/home/`, or any path outside this directory.\n"
         )
 
-        # Check if prompt caching is enabled
-        try:
-            from services.settings import load_settings
-            _settings = load_settings(self.working_dir)
-            caching_enabled = _settings.get("prompt_caching_enabled", True)
-        except Exception:
-            caching_enabled = True
-
-        # Current local time — either injected into system prompt (no caching)
-        # or held in volatile context for the first user message (caching on)
+        # Current local time
         local_now = datetime.now()
-        time_context = (
-            f"[Current local date and time: {local_now.strftime('%A, %d %B %Y at %I:%M %p')}]\n\n"
+        volatile_parts.append(
+            f"[Current local date and time: {local_now.strftime('%A, %d %B %Y at %I:%M %p')}]\n"
         )
 
-        if caching_enabled:
-            # Move timestamp to volatile context → prepended to first user message
-            self._volatile_context = time_context
-        else:
-            # Original behaviour: bake timestamp into system prompt
-            prompt += (
-                "\n\n## Current Time\n\n"
-                f"The current local date and time is: **{local_now.strftime('%A, %d %B %Y at %I:%M %p')}**\n"
-            )
-
-        # Inject any skills assigned to the orchestrator (Clyde)
+        # Orchestrator skills
         try:
-            if not registry:
-                registry = load_registry(self.working_dir)
+            registry = load_registry(self.working_dir)
             orchestrator = registry.get("orchestrator", {})
             skill_names = orchestrator.get("skills", [])
             if skill_names:
                 skills_content = self._load_agent_skills(skill_names)
                 if skills_content:
-                    prompt += (
-                        "\n\n## Your Assigned Skills\n\n"
+                    volatile_parts.append(
+                        "## Your Assigned Skills\n\n"
                         "The following skills have been assigned to you. Follow these "
                         "documented processes when relevant to your tasks.\n\n"
                         f"{skills_content}"
                     )
         except Exception:
             pass  # Non-critical — continue without skills if registry read fails
+
+        self._volatile_context = "\n\n".join(volatile_parts)
 
         return prompt
 
@@ -641,18 +633,11 @@ class ClydeChatManager:
 
         system_prompt = self._load_system_prompt()
 
-        # Check caching preference (already loaded in _load_system_prompt but
-        # we need the flag here too for context summary handling)
-        try:
-            from services.settings import load_settings
-            _settings = load_settings(self.working_dir)
-            caching_enabled = _settings.get("prompt_caching_enabled", True)
-        except Exception:
-            caching_enabled = True
-
         # Context injection strategy:
         # 1. If we have an SDK session ID → CLI resumes natively (no summary needed)
-        # 2. Else if we have prior messages → build a manual context summary (fallback)
+        # 2. Else if we have prior messages → build a manual context summary
+        #    Context summary always goes to volatile context (prepended to first
+        #    user message) to keep the system prompt cache-friendly.
         if sdk_session_id:
             logger.info(
                 f"[INIT] Resuming SDK session {sdk_session_id} — "
@@ -660,20 +645,11 @@ class ClydeChatManager:
             )
         elif prior_messages:
             context_summary = self._build_context_summary(prior_messages)
-            if caching_enabled:
-                # Move context summary to volatile context → prepended to first user message
-                # This keeps the system prompt stable for cache hits across sessions
-                self._volatile_context += context_summary
-                logger.info(
-                    f"[INIT] Context summary ({len(prior_messages)} messages) "
-                    "moved to volatile context for prompt caching"
-                )
-            else:
-                # Original behaviour: append to system prompt
-                system_prompt += context_summary
-                logger.info(f"[INIT] Injected context summary ({len(prior_messages)} messages)")
-
-        logger.info(f"[INIT] Prompt caching: {'enabled' if caching_enabled else 'disabled'}")
+            self._volatile_context += context_summary
+            logger.info(
+                f"[INIT] Context summary ({len(prior_messages)} messages) "
+                "moved to volatile context"
+            )
 
         agents = self._build_agent_definitions()
         logger.info(f"[INIT] System prompt length: {len(system_prompt)}")

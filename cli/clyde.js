@@ -265,13 +265,15 @@ async function runSetupWizard() {
   const supabaseAnonKey = await promptWithValidation(
     'Anon Key:',
     (v) => v.startsWith('eyJ') && v.length > 30,
-    'Anon key should start with "eyJ"'
+    'Anon key should start with "eyJ"',
+    { secret: true }
   );
 
   const supabaseServiceKey = await promptWithValidation(
     'Service Role Key:',
     (v) => v.startsWith('eyJ') && v.length > 30,
-    'Service role key should start with "eyJ"'
+    'Service role key should start with "eyJ"',
+    { secret: true }
   );
 
   console.log('');
@@ -287,13 +289,15 @@ async function runSetupWizard() {
   const anthropicKey = await promptWithValidation(
     'Anthropic API Key:',
     (v) => v.startsWith('sk-ant-') && v.length > 20,
-    'Key should start with "sk-ant-"'
+    'Key should start with "sk-ant-"',
+    { secret: true }
   );
 
   const openaiKey = await promptWithValidation(
     'OpenAI API Key:',
     (v) => v.startsWith('sk-') && v.length > 20,
-    'Key should start with "sk-"'
+    'Key should start with "sk-"',
+    { secret: true }
   );
 
   // Extract project ref
@@ -446,7 +450,7 @@ async function installDependencies() {
 
 // ─── Working Directory Setup ────────────────────────────────────────
 function ensureWorkingDir() {
-  const dirs = ['agents', 'prompts', 'memory', 'logs', 'output', 'skills', 'uploads'];
+  const dirs = ['agents', 'prompts', 'memory', 'logs', 'output', 'skills', 'uploads', 'teams', 'workflows'];
   for (const dir of dirs) {
     const p = path.join(WORKING_DIR, dir);
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });

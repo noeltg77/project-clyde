@@ -31,6 +31,8 @@ from services.registry import (
     assign_agent_to_team,
     remove_agent_from_team,
     get_team_members,
+    load_teams_index,
+    load_team_file,
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
