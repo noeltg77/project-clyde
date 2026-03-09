@@ -188,6 +188,7 @@ function SystemTab() {
     success?: boolean;
     teams_created?: number;
     agents_migrated?: number;
+    workflows_extracted?: number;
     prompt_updated?: boolean;
     error?: string;
   } | null>(null);
@@ -636,6 +637,9 @@ function SystemTab() {
                       <p className="font-semibold">Migration complete</p>
                       <p>{migrateResult.teams_created} team{migrateResult.teams_created !== 1 ? "s" : ""} created</p>
                       <p>{migrateResult.agents_migrated} agent{migrateResult.agents_migrated !== 1 ? "s" : ""} migrated</p>
+                      {(migrateResult.workflows_extracted ?? 0) > 0 && (
+                        <p>{migrateResult.workflows_extracted} workflow{migrateResult.workflows_extracted !== 1 ? "s" : ""} extracted</p>
+                      )}
                       {migrateResult.prompt_updated && <p>System prompt updated</p>}
                     </div>
                   )}
