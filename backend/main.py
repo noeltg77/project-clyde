@@ -57,6 +57,7 @@ from services.supabase_client import (
 )
 from services.embeddings import generate_embedding, generate_query_embedding
 from services.registry import load_registry, save_registry
+from services.migration import run_migration
 from services.settings import load_settings, update_settings
 from services.scheduler import TaskScheduler
 from services.file_watcher import FileWatcherService
@@ -1373,6 +1374,31 @@ async def import_system(body: dict):
     except Exception as e:
         logger.error(f"[API] Import failed: {e}")
         return {"error": str(e)}
+
+
+# ─── Legacy Migration API ─────────────────────────────────────────
+
+
+@app.post("/api/system/migrate")
+async def migrate_legacy_system(body: dict):
+    """Migrate an old registry.json + Clyde prompt to the new team file architecture."""
+    try:
+        registry = body.get("registry")
+        prompt = body.get("prompt")
+
+        if not registry or not isinstance(registry, dict):
+            return {"error": "A valid registry JSON object is required."}
+        if not prompt or not isinstance(prompt, str) or not prompt.strip():
+            return {"error": "A valid Clyde prompt string is required."}
+
+        result = run_migration(WORKING_DIR, registry, prompt)
+        return result
+    except ValueError as e:
+        logger.error(f"[API] Migration config error: {e}")
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"[API] Migration failed: {e}")
+        return {"error": f"Migration failed: {str(e)}"}
 
 
 # ─── File Management API ───────────────────────────────────────────

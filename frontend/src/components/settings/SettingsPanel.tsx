@@ -179,6 +179,19 @@ function SystemTab() {
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState(false);
 
+  // Migration state
+  const [showMigrateModal, setShowMigrateModal] = useState(false);
+  const [promptFile, setPromptFile] = useState<File | null>(null);
+  const [registryFile, setRegistryFile] = useState<File | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{
+    success?: boolean;
+    teams_created?: number;
+    agents_migrated?: number;
+    prompt_updated?: boolean;
+    error?: string;
+  } | null>(null);
+
   useEffect(() => {
     // Load env vars from backend
     fetch(`${API_URL}/api/env-vars`)
@@ -332,6 +345,48 @@ function SystemTab() {
     input.click();
   }
 
+  async function handleMigration() {
+    if (!promptFile || !registryFile) return;
+
+    setMigrating(true);
+    setMigrateResult(null);
+
+    try {
+      const promptText = await promptFile.text();
+      const registryText = await registryFile.text();
+
+      let registryData: Record<string, unknown>;
+      try {
+        registryData = JSON.parse(registryText);
+      } catch {
+        setMigrateResult({ error: "Invalid JSON in registry file." });
+        setMigrating(false);
+        return;
+      }
+
+      const res = await fetch(`${API_URL}/api/system/migrate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registry: registryData, prompt: promptText }),
+      });
+
+      const data = await res.json();
+      setMigrateResult(data);
+    } catch {
+      setMigrateResult({ error: "Could not reach backend." });
+    } finally {
+      setMigrating(false);
+    }
+  }
+
+  function openMigrateModal() {
+    setPromptFile(null);
+    setRegistryFile(null);
+    setMigrateResult(null);
+    setMigrating(false);
+    setShowMigrateModal(true);
+  }
+
   return (
     <div className="space-y-6">
       {/* API Keys — grouped by service */}
@@ -439,6 +494,157 @@ function SystemTab() {
           Export saves registry, prompts, skills, memory, schedules, and triggers.
         </p>
       </div>
+
+      {/* Migrate Legacy System */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+          Migrate Legacy System
+        </h3>
+        <p className="text-[10px] text-text-secondary/50 mb-2">
+          Upload your old Clyde prompt and registry.json to migrate to the new team file architecture.
+        </p>
+        <button
+          onClick={openMigrateModal}
+          className="w-full py-2 bg-bg-tertiary border border-border text-text-primary text-sm font-semibold rounded-[2px] hover:border-accent-primary transition-colors"
+        >
+          Migrate
+        </button>
+      </div>
+
+      {/* Migration Modal */}
+      <AnimatePresence>
+        {showMigrateModal && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/60"
+              onClick={() => !migrating && setShowMigrateModal(false)}
+            />
+
+            {/* Modal content */}
+            <motion.div
+              className="relative w-full max-w-md mx-4 bg-bg-secondary border border-border rounded-[2px] p-6"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={springs.snappy}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-sm font-semibold uppercase tracking-widest text-text-primary">
+                  Migrate Legacy System
+                </h2>
+                <button
+                  onClick={() => !migrating && setShowMigrateModal(false)}
+                  className="w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Upload: Clyde Prompt */}
+              <div className="mb-4">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5 block">
+                  Clyde Prompt (.md)
+                </label>
+                <label
+                  className={`block border-2 border-dashed rounded-[2px] p-4 text-center cursor-pointer transition-colors ${
+                    promptFile
+                      ? "border-accent-primary/50 bg-accent-primary/5"
+                      : "border-border hover:border-accent-primary bg-bg-tertiary"
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept=".md,.txt"
+                    className="hidden"
+                    onChange={(e) => setPromptFile(e.target.files?.[0] ?? null)}
+                  />
+                  {promptFile ? (
+                    <span className="text-xs text-accent-primary font-medium">
+                      {promptFile.name}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-secondary/50">
+                      Click to select file
+                    </span>
+                  )}
+                </label>
+              </div>
+
+              {/* Upload: Registry JSON */}
+              <div className="mb-5">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5 block">
+                  Registry JSON (.json)
+                </label>
+                <label
+                  className={`block border-2 border-dashed rounded-[2px] p-4 text-center cursor-pointer transition-colors ${
+                    registryFile
+                      ? "border-accent-primary/50 bg-accent-primary/5"
+                      : "border-border hover:border-accent-primary bg-bg-tertiary"
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => setRegistryFile(e.target.files?.[0] ?? null)}
+                  />
+                  {registryFile ? (
+                    <span className="text-xs text-accent-primary font-medium">
+                      {registryFile.name}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-secondary/50">
+                      Click to select file
+                    </span>
+                  )}
+                </label>
+              </div>
+
+              {/* Run Migration button */}
+              <button
+                onClick={handleMigration}
+                disabled={!promptFile || !registryFile || migrating}
+                className="w-full py-2.5 text-sm font-semibold uppercase tracking-wider rounded-[2px] transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-accent-primary text-bg-primary hover:brightness-110"
+              >
+                {migrating ? "Migrating..." : "Run Migration"}
+              </button>
+
+              {/* Result display */}
+              {migrateResult && (
+                <div
+                  className={`mt-4 p-3 rounded-[2px] border text-xs ${
+                    migrateResult.error
+                      ? "border-error/30 bg-error/5 text-error"
+                      : "border-accent-tertiary/30 bg-accent-tertiary/5 text-accent-tertiary"
+                  }`}
+                >
+                  {migrateResult.error ? (
+                    <p>{migrateResult.error}</p>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="font-semibold">Migration complete</p>
+                      <p>{migrateResult.teams_created} team{migrateResult.teams_created !== 1 ? "s" : ""} created</p>
+                      <p>{migrateResult.agents_migrated} agent{migrateResult.agents_migrated !== 1 ? "s" : ""} migrated</p>
+                      {migrateResult.prompt_updated && <p>System prompt updated</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
