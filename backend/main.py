@@ -1206,6 +1206,8 @@ async def update_registry_settings(body: dict):
                 elif not enabled and _sleep_prevention.is_active:
                     _sleep_prevention.stop()
                     logger.info("[API] Sleep prevention stopped via settings toggle")
+        if "debug_mode_enabled" in body:
+            updates["debug_mode_enabled"] = bool(body["debug_mode_enabled"])
 
         if updates:
             update_settings(WORKING_DIR, updates)
