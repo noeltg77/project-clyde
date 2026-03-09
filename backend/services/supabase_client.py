@@ -682,3 +682,93 @@ async def reorder_tasks(updates: list[dict]) -> bool:
             "position": item["position"],
         }).eq("id", item["id"]).execute()
     return True
+
+
+# --- Integrations (APIs & Webhooks) ---
+
+
+async def get_integrations(type_filter: str | None = None) -> list[dict]:
+    """Get all integrations, optionally filtered by type ('api' or 'webhook')."""
+    client = get_supabase()
+    query = client.table("integrations").select("*").order("created_at", desc=True)
+    if type_filter:
+        query = query.eq("type", type_filter)
+    result = query.execute()
+    return result.data
+
+
+async def get_integration(integration_id: str) -> dict | None:
+    """Get a single integration by ID."""
+    client = get_supabase()
+    result = (
+        client.table("integrations")
+        .select("*")
+        .eq("id", integration_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+async def create_integration(
+    name: str,
+    int_type: str,
+    base_url: str = "",
+    method: str = "GET",
+    auth_type: str = "none",
+    credential_env_key: str | None = None,
+    headers: dict | None = None,
+    description: str = "",
+    documentation_url: str | None = None,
+    assigned_agents: list[str] | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    """Create a new integration (API or webhook)."""
+    client = get_supabase()
+    row = {
+        "name": name,
+        "type": int_type,
+        "base_url": base_url,
+        "method": method,
+        "auth_type": auth_type,
+        "credential_env_key": credential_env_key,
+        "headers": headers or {},
+        "description": description,
+        "documentation_url": documentation_url,
+        "assigned_agents": assigned_agents or [],
+        "metadata": metadata or {},
+    }
+    result = client.table("integrations").insert(row).execute()
+    return result.data[0] if result.data else {}
+
+
+async def update_integration(integration_id: str, **fields) -> dict:
+    """Partial update of an integration."""
+    client = get_supabase()
+    allowed = {
+        "name", "type", "base_url", "method", "auth_type",
+        "credential_env_key", "headers", "description",
+        "documentation_url", "assigned_agents", "enabled", "metadata",
+    }
+    update_data = {k: v for k, v in fields.items() if k in allowed}
+    if not update_data:
+        return {}
+    result = (
+        client.table("integrations")
+        .update(update_data)
+        .eq("id", integration_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+async def delete_integration(integration_id: str) -> bool:
+    """Delete an integration by ID."""
+    client = get_supabase()
+    result = (
+        client.table("integrations")
+        .delete()
+        .eq("id", integration_id)
+        .execute()
+    )
+    return len(result.data) > 0

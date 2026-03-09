@@ -332,6 +332,17 @@ function TeamHeader({
 }
 
 /* ─── Agent Detail Panel ─── */
+type AgentIntegration = {
+  id: string;
+  name: string;
+  type: "api" | "webhook";
+  base_url: string;
+  method: string;
+  auth_type: string;
+  enabled: boolean;
+  assigned_agents: string[];
+};
+
 function AgentDetail({
   agent,
   onClose,
@@ -342,9 +353,30 @@ function AgentDetail({
   onStatusChange: (registryId: string, newStatus: string) => void;
 }) {
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [agentIntegrations, setAgentIntegrations] = useState<AgentIntegration[]>([]);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
 
   const isOrchestrator = agent.registryId === "clyde-001";
+
+  // Fetch integrations assigned to this agent
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/integrations`);
+        const data = await res.json();
+        if (cancelled) return;
+        const all: AgentIntegration[] = data.integrations || [];
+        const assigned = all.filter(
+          (i) => Array.isArray(i.assigned_agents) && i.assigned_agents.includes(agent.registryId)
+        );
+        setAgentIntegrations(assigned);
+      } catch {
+        if (!cancelled) setAgentIntegrations([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [agent.registryId]);
 
   return (
     <div className="p-5 bg-bg-tertiary rounded-[2px] border border-border">
@@ -406,6 +438,37 @@ function AgentDetail({
               {agent.skills.map((skill) => (
                 <span key={skill} className="px-1.5 py-0.5 text-[10px] font-mono bg-accent-primary/10 rounded-[2px] text-accent-primary">
                   {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {agentIntegrations.length > 0 && (
+          <div className="col-span-2">
+            <span className="text-text-secondary/60 text-[11px] uppercase tracking-wider font-semibold">
+              APIs / Webhooks
+            </span>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {agentIntegrations.map((integration) => (
+                <span
+                  key={integration.id}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono rounded-[2px] border ${
+                    integration.type === "api"
+                      ? "bg-accent-tertiary/10 text-accent-tertiary border-accent-tertiary/20"
+                      : "bg-accent-secondary/10 text-accent-secondary border-accent-secondary/20"
+                  } ${!integration.enabled ? "opacity-40" : ""}`}
+                >
+                  <span className={`w-1 h-1 rounded-full ${
+                    integration.type === "api" ? "bg-accent-tertiary" : "bg-accent-secondary"
+                  }`} />
+                  {integration.name}
+                  <span className={`text-[8px] uppercase font-semibold ${
+                    integration.type === "api"
+                      ? "text-accent-tertiary/50"
+                      : "text-accent-secondary/50"
+                  }`}>
+                    {integration.type}
+                  </span>
                 </span>
               ))}
             </div>

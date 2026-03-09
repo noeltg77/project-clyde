@@ -59,6 +59,10 @@ _AUTO_ALLOW_TOOLS = {
     # Phase 8: Teams
     "create_team", "list_teams", "update_team", "delete_team",
     "assign_agent_to_team", "remove_agent_from_team",
+    # Phase 9: Integrations (APIs & Webhooks)
+    "create_integration", "list_integrations", "get_integration",
+    "update_integration", "delete_integration", "assign_integration",
+    "call_integration",
 }
 
 

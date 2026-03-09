@@ -54,6 +54,11 @@ from services.supabase_client import (
     update_task,
     delete_task,
     reorder_tasks,
+    get_integrations,
+    get_integration,
+    create_integration,
+    update_integration,
+    delete_integration,
 )
 from services.embeddings import generate_embedding, generate_query_embedding
 from services.registry import load_registry, save_registry
@@ -84,6 +89,37 @@ def _safe_resolve(relative_path: str) -> Path:
     if not str(target).startswith(str(working)):
         raise ValueError(f"Path traversal blocked: {relative_path}")
     return target
+
+
+def _write_env_var(key: str, value: str) -> None:
+    """Add or update an environment variable in .env.local.
+
+    Reads the current file, updates or appends the key=value pair,
+    and writes back. Also updates os.environ for immediate use.
+    """
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env.local")
+    lines: list[str] = []
+    found = False
+
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.strip().startswith(f"{key}="):
+                    lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    lines.append(line)
+
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines.append("\n")
+        lines.append(f"\n# Integration: {key}\n")
+        lines.append(f"{key}={value}\n")
+
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+
+    os.environ[key] = value
 
 
 # Phase 4B: Cost tracking (USD)
@@ -560,6 +596,106 @@ async def update_trigger(trigger_id: str, body: dict):
         return {"error": "Trigger not found"}
     except Exception as e:
         logger.error(f"[API] Failed to update trigger: {e}")
+        return {"error": str(e)}
+
+
+# --- Integrations (Phase 9: APIs & Webhooks) ---
+
+
+@app.get("/api/integrations")
+async def list_integrations_route(type: str | None = None):
+    """List all integrations, optionally filtered by type."""
+    try:
+        integrations = await get_integrations(type_filter=type)
+        return {"integrations": integrations}
+    except Exception as e:
+        logger.error(f"[API] Failed to list integrations: {e}")
+        return {"integrations": [], "error": str(e)}
+
+
+@app.post("/api/integrations")
+async def create_integration_route(body: dict):
+    """Create a new integration (API or webhook)."""
+    try:
+        name = body.get("name", "").strip()
+        int_type = body.get("type", "").strip()
+        if not name or int_type not in ("api", "webhook"):
+            return {"error": "name and type ('api' or 'webhook') are required"}
+
+        credential_env_key = body.get("credential_env_key", "").strip() or None
+        credential_value = body.get("credential_value", "").strip() or None
+        if credential_env_key and credential_value:
+            _write_env_var(credential_env_key, credential_value)
+
+        integration = await create_integration(
+            name=name,
+            int_type=int_type,
+            base_url=body.get("base_url", "").strip(),
+            method=body.get("method", "GET").strip().upper(),
+            auth_type=body.get("auth_type", "none").strip(),
+            credential_env_key=credential_env_key,
+            headers=body.get("headers") or {},
+            description=body.get("description", "").strip(),
+            documentation_url=body.get("documentation_url", "").strip() or None,
+            assigned_agents=body.get("assigned_agents") or [],
+            metadata=body.get("metadata") or {},
+        )
+        return {"integration": integration}
+    except Exception as e:
+        logger.error(f"[API] Failed to create integration: {e}")
+        return {"error": str(e)}
+
+
+@app.patch("/api/integrations/{integration_id}")
+async def update_integration_route(integration_id: str, body: dict):
+    """Update an integration."""
+    try:
+        if body.get("toggle_enabled"):
+            existing = await get_integration(integration_id)
+            if not existing:
+                return {"error": "Integration not found"}
+            updated = await update_integration(
+                integration_id, enabled=not existing.get("enabled", True)
+            )
+            return {"integration": updated}
+
+        credential_env_key = body.get("credential_env_key", "").strip() or None
+        credential_value = body.pop("credential_value", None)
+        if credential_env_key and credential_value:
+            _write_env_var(credential_env_key, credential_value.strip())
+
+        body.pop("credential_value", None)
+        updated = await update_integration(integration_id, **body)
+        if updated:
+            return {"integration": updated}
+        return {"error": "Integration not found"}
+    except Exception as e:
+        logger.error(f"[API] Failed to update integration: {e}")
+        return {"error": str(e)}
+
+
+@app.delete("/api/integrations/{integration_id}")
+async def delete_integration_route(integration_id: str):
+    """Delete an integration."""
+    try:
+        deleted = await delete_integration(integration_id)
+        return {"deleted": deleted}
+    except Exception as e:
+        logger.error(f"[API] Failed to delete integration: {e}")
+        return {"deleted": False, "error": str(e)}
+
+
+@app.post("/api/integrations/{integration_id}/assign")
+async def assign_integration_route(integration_id: str, body: dict):
+    """Assign or unassign agents to an integration."""
+    try:
+        agent_ids = body.get("agent_ids", [])
+        updated = await update_integration(integration_id, assigned_agents=agent_ids)
+        if updated:
+            return {"integration": updated}
+        return {"error": "Integration not found"}
+    except Exception as e:
+        logger.error(f"[API] Failed to assign integration: {e}")
         return {"error": str(e)}
 
 

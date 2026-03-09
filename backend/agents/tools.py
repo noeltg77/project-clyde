@@ -2008,6 +2008,384 @@ async def delete_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Failed to delete task: {str(e)}")
 
 
+# ─── Integration Tools (Phase 9: APIs & Webhooks) ────────────────
+
+
+@tool(
+    "create_integration",
+    "Register a new API or webhook integration. Stores the configuration in the "
+    "database and optionally saves credentials to .env.local. "
+    "Set type to 'api' for REST APIs or 'webhook' for webhooks. "
+    "auth_type can be 'bearer', 'api_key', 'basic', or 'none'. "
+    "credential_env_key is the env var name (e.g. 'STRIPE_API_KEY') and "
+    "credential_value is the actual secret to store.",
+    {
+        "name": str, "type": str, "base_url": str, "method": str,
+        "auth_type": str, "credential_env_key": str, "credential_value": str,
+        "description": str, "documentation_url": str,
+    },
+)
+async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new integration (API or webhook)."""
+    try:
+        from services.supabase_client import create_integration
+
+        name = args.get("name", "").strip()
+        int_type = args.get("type", "").strip()
+        if not name:
+            return _error_response("Integration name is required.")
+        if int_type not in ("api", "webhook"):
+            return _error_response("type must be 'api' or 'webhook'.")
+
+        base_url = args.get("base_url", "").strip()
+        method = args.get("method", "GET").strip().upper()
+        auth_type = args.get("auth_type", "none").strip()
+        credential_env_key = args.get("credential_env_key", "").strip() or None
+        credential_value = args.get("credential_value", "").strip() or None
+        description = args.get("description", "").strip()
+        documentation_url = args.get("documentation_url", "").strip() or None
+
+        # Write credential to .env.local if provided
+        if credential_env_key and credential_value:
+            env_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env.local"
+            )
+            lines: list[str] = []
+            found = False
+            if os.path.exists(env_path):
+                with open(env_path, "r") as f:
+                    for line in f:
+                        if line.strip().startswith(f"{credential_env_key}="):
+                            lines.append(f"{credential_env_key}={credential_value}\n")
+                            found = True
+                        else:
+                            lines.append(line)
+            if not found:
+                if lines and not lines[-1].endswith("\n"):
+                    lines.append("\n")
+                lines.append(f"\n# Integration: {credential_env_key}\n")
+                lines.append(f"{credential_env_key}={credential_value}\n")
+            with open(env_path, "w") as f:
+                f.writelines(lines)
+            os.environ[credential_env_key] = credential_value
+
+        integration = await create_integration(
+            name=name,
+            int_type=int_type,
+            base_url=base_url,
+            method=method,
+            auth_type=auth_type,
+            credential_env_key=credential_env_key,
+            description=description,
+            documentation_url=documentation_url,
+        )
+
+        return _text_response(
+            f"Created {int_type} integration '{name}':\n"
+            f"  ID: {integration.get('id', 'N/A')}\n"
+            f"  URL: {base_url}\n"
+            f"  Auth: {auth_type}\n"
+            f"  Credential key: {credential_env_key or '(none)'}\n"
+            f"  Description: {description[:100]}"
+        )
+    except Exception as e:
+        return _error_response(f"Failed to create integration: {str(e)}")
+
+
+@tool(
+    "list_integrations",
+    "List all registered API and webhook integrations with their configuration, "
+    "status, and assigned agents. Optionally filter by type ('api' or 'webhook').",
+    {"type_filter": str},
+)
+async def list_integrations_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List all integrations."""
+    try:
+        from services.supabase_client import get_integrations
+
+        type_filter = args.get("type_filter", "").strip() or None
+        integrations = await get_integrations(type_filter=type_filter)
+
+        if not integrations:
+            return _text_response("No integrations configured yet.")
+
+        lines = [f"Integrations ({len(integrations)} total):\n"]
+        for i in integrations:
+            status = "enabled" if i.get("enabled") else "disabled"
+            agents = i.get("assigned_agents") or []
+            lines.append(
+                f"  - {i['name']} ({i['id']})\n"
+                f"    Type: {i['type']}\n"
+                f"    URL: {i.get('base_url', '')}\n"
+                f"    Method: {i.get('method', 'GET')}\n"
+                f"    Auth: {i.get('auth_type', 'none')}\n"
+                f"    Status: {status}\n"
+                f"    Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
+                f"    Description: {i.get('description', '')[:80]}"
+            )
+
+        return _text_response("\n".join(lines))
+    except Exception as e:
+        return _error_response(f"Failed to list integrations: {str(e)}")
+
+
+@tool(
+    "get_integration",
+    "Get detailed information about a specific integration by ID, including "
+    "its URL, auth type, headers, and which agents it is assigned to.",
+    {"integration_id": str},
+)
+async def get_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Get a single integration's details."""
+    try:
+        from services.supabase_client import get_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+
+        integration = await get_integration(integration_id)
+        if not integration:
+            return _error_response(f"Integration not found: {integration_id}")
+
+        agents = integration.get("assigned_agents") or []
+        headers = integration.get("headers") or {}
+        return _text_response(
+            f"Integration: {integration['name']}\n"
+            f"  ID: {integration['id']}\n"
+            f"  Type: {integration['type']}\n"
+            f"  URL: {integration.get('base_url', '')}\n"
+            f"  Method: {integration.get('method', 'GET')}\n"
+            f"  Auth: {integration.get('auth_type', 'none')}\n"
+            f"  Credential env key: {integration.get('credential_env_key') or '(none)'}\n"
+            f"  Headers: {json.dumps(headers)}\n"
+            f"  Enabled: {integration.get('enabled', True)}\n"
+            f"  Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
+            f"  Docs: {integration.get('documentation_url') or '(none)'}\n"
+            f"  Description: {integration.get('description', '')}"
+        )
+    except Exception as e:
+        return _error_response(f"Failed to get integration: {str(e)}")
+
+
+@tool(
+    "update_integration",
+    "Update an existing integration's configuration (URL, headers, auth, etc.). "
+    "Pass a JSON string of fields to update.",
+    {"integration_id": str, "updates": str},
+)
+async def update_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update an integration."""
+    try:
+        from services.supabase_client import update_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        updates_str = args.get("updates", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+        if not updates_str:
+            return _error_response("updates JSON string is required.")
+
+        try:
+            updates = json.loads(updates_str)
+        except json.JSONDecodeError:
+            return _error_response("updates must be a valid JSON string.")
+
+        # Handle credential update separately
+        credential_env_key = updates.pop("credential_env_key", None)
+        credential_value = updates.pop("credential_value", None)
+        if credential_env_key and credential_value:
+            env_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env.local"
+            )
+            lines: list[str] = []
+            found = False
+            if os.path.exists(env_path):
+                with open(env_path, "r") as f:
+                    for line in f:
+                        if line.strip().startswith(f"{credential_env_key}="):
+                            lines.append(f"{credential_env_key}={credential_value}\n")
+                            found = True
+                        else:
+                            lines.append(line)
+            if not found:
+                if lines and not lines[-1].endswith("\n"):
+                    lines.append("\n")
+                lines.append(f"\n# Integration: {credential_env_key}\n")
+                lines.append(f"{credential_env_key}={credential_value}\n")
+            with open(env_path, "w") as f:
+                f.writelines(lines)
+            os.environ[credential_env_key] = credential_value
+            updates["credential_env_key"] = credential_env_key
+
+        updated = await update_integration(integration_id, **updates)
+        if not updated:
+            return _error_response(f"Integration not found: {integration_id}")
+
+        return _text_response(f"Updated integration {integration_id}: {json.dumps(updates)}")
+    except Exception as e:
+        return _error_response(f"Failed to update integration: {str(e)}")
+
+
+@tool(
+    "delete_integration",
+    "Remove an API or webhook integration by its ID.",
+    {"integration_id": str},
+)
+async def delete_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete an integration."""
+    try:
+        from services.supabase_client import delete_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+
+        deleted = await delete_integration(integration_id)
+        if not deleted:
+            return _error_response(f"Integration not found: {integration_id}")
+        return _text_response(f"Deleted integration: {integration_id}")
+    except Exception as e:
+        return _error_response(f"Failed to delete integration: {str(e)}")
+
+
+@tool(
+    "assign_integration",
+    "Assign an API or webhook integration to one or more subagents so they "
+    "can use it during tasks. Pass agent IDs as a comma-separated string.",
+    {"integration_id": str, "agent_ids": str},
+)
+async def assign_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Assign agents to an integration."""
+    try:
+        from services.supabase_client import update_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        agent_ids_str = args.get("agent_ids", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+
+        # Parse agent IDs (comma-separated or JSON array)
+        agent_ids: list[str] = []
+        if agent_ids_str:
+            try:
+                agent_ids = json.loads(agent_ids_str)
+            except json.JSONDecodeError:
+                agent_ids = [a.strip() for a in agent_ids_str.split(",") if a.strip()]
+
+        updated = await update_integration(integration_id, assigned_agents=agent_ids)
+        if not updated:
+            return _error_response(f"Integration not found: {integration_id}")
+
+        return _text_response(
+            f"Assigned {len(agent_ids)} agent(s) to integration {integration_id}: "
+            f"{', '.join(agent_ids)}"
+        )
+    except Exception as e:
+        return _error_response(f"Failed to assign integration: {str(e)}")
+
+
+@tool(
+    "call_integration",
+    "Make an HTTP request using a registered integration's stored configuration. "
+    "Reads the credential from the environment, applies headers and auth, and "
+    "executes the request. Returns the response status and body. "
+    "Use 'path' to append to the base URL (e.g. '/customers'). "
+    "Use 'body' for JSON request body and 'query_params' for URL parameters.",
+    {
+        "integration_id": str, "path": str, "method": str,
+        "body": str, "query_params": str,
+    },
+)
+async def call_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Make an HTTP request using a registered integration."""
+    try:
+        import httpx
+        from services.supabase_client import get_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+
+        integration = await get_integration(integration_id)
+        if not integration:
+            return _error_response(f"Integration not found: {integration_id}")
+
+        if not integration.get("enabled", True):
+            return _error_response(f"Integration '{integration['name']}' is disabled.")
+
+        # Build URL
+        base_url = integration.get("base_url", "").rstrip("/")
+        path = args.get("path", "").strip()
+        url = f"{base_url}/{path.lstrip('/')}" if path else base_url
+
+        # Determine method
+        method = (args.get("method", "").strip().upper()
+                  or integration.get("method", "GET"))
+
+        # Build headers from integration config
+        headers: dict[str, str] = dict(integration.get("headers") or {})
+
+        # Apply authentication
+        auth_type = integration.get("auth_type", "none")
+        credential_env_key = integration.get("credential_env_key")
+        if credential_env_key and auth_type != "none":
+            credential = os.environ.get(credential_env_key, "")
+            if not credential:
+                return _error_response(
+                    f"Credential not found in environment: {credential_env_key}. "
+                    f"Please set the credential value first."
+                )
+            if auth_type == "bearer":
+                headers["Authorization"] = f"Bearer {credential}"
+            elif auth_type == "api_key":
+                headers["X-API-Key"] = credential
+            elif auth_type == "basic":
+                import base64
+                encoded = base64.b64encode(credential.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+
+        # Parse body and query params
+        request_body = None
+        body_str = args.get("body", "").strip()
+        if body_str:
+            try:
+                request_body = json.loads(body_str)
+                if "Content-Type" not in headers:
+                    headers["Content-Type"] = "application/json"
+            except json.JSONDecodeError:
+                return _error_response("body must be a valid JSON string.")
+
+        params = None
+        params_str = args.get("query_params", "").strip()
+        if params_str:
+            try:
+                params = json.loads(params_str)
+            except json.JSONDecodeError:
+                return _error_response("query_params must be a valid JSON string.")
+
+        # Execute request
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=request_body if request_body else None,
+                params=params,
+            )
+
+        # Truncate response body to avoid context bloat
+        response_text = response.text[:4000]
+        if len(response.text) > 4000:
+            response_text += f"\n... (truncated, full response is {len(response.text)} chars)"
+
+        return _text_response(
+            f"HTTP {response.status_code} {method} {url}\n\n{response_text}"
+        )
+    except Exception as e:
+        return _error_response(f"Failed to call integration: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -2066,5 +2444,13 @@ registry_mcp_server = create_sdk_mcp_server(
         delete_team_tool,
         assign_agent_to_team_tool,
         remove_agent_from_team_tool,
+        # Phase 9: Integrations (APIs & Webhooks)
+        create_integration_tool,
+        list_integrations_tool,
+        get_integration_tool,
+        update_integration_tool,
+        delete_integration_tool,
+        assign_integration_tool,
+        call_integration_tool,
     ],
 )
