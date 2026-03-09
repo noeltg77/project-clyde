@@ -7,6 +7,7 @@ and activity hooks.
 import asyncio
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -143,19 +144,23 @@ class ClydeChatManager:
             f"[Current local date and time: {local_now.strftime('%A, %d %B %Y at %I:%M %p')}]\n"
         )
 
-        # Orchestrator skills
+        # Orchestrator skills (lazy-loaded — summaries only)
         try:
             registry = load_registry(self.working_dir)
             orchestrator = registry.get("orchestrator", {})
             skill_names = orchestrator.get("skills", [])
             if skill_names:
-                skills_content = self._load_agent_skills(skill_names)
-                if skills_content:
+                skill_summaries = self._load_skill_summaries(skill_names)
+                if skill_summaries:
                     volatile_parts.append(
                         "## Your Assigned Skills\n\n"
-                        "The following skills have been assigned to you. Follow these "
-                        "documented processes when relevant to your tasks.\n\n"
-                        f"{skills_content}"
+                        "You have the following skills available. When a task matches "
+                        "a skill's description, use the `read_skill` tool to load the "
+                        "full skill content before proceeding.\n\n"
+                        f"{skill_summaries}\n\n"
+                        "**Do not guess skill procedures from memory.** Always call "
+                        "`read_skill(name=\"<skill-name>\")` to load the complete "
+                        "instructions before applying a skill."
                     )
         except Exception:
             pass  # Non-critical — continue without skills if registry read fails
@@ -274,6 +279,47 @@ class ClydeChatManager:
                     sections.append(f"### {skill_name}\n\n{content}")
         return "\n\n".join(sections) if sections else ""
 
+    def _load_skill_summaries(self, skill_names: list[str]) -> str:
+        """Load only name + description from skill YAML frontmatter.
+
+        Returns a compact bullet list so agents know what skills are available
+        without injecting full content. Agents use read_skill on demand.
+        """
+        if not skill_names:
+            return ""
+        skills_dir = os.path.join(self.working_dir, "skills")
+        entries = []
+        for skill_name in skill_names:
+            filename = f"{skill_name}.md" if not skill_name.endswith(".md") else skill_name
+            filepath = os.path.join(skills_dir, filename)
+            if not os.path.exists(filepath):
+                continue
+            with open(filepath, "r") as f:
+                content = f.read()
+
+            # Parse YAML frontmatter (between --- markers)
+            frontmatter_blocks = re.findall(
+                r'^---\s*\n(.*?)\n---',
+                content,
+                re.MULTILINE | re.DOTALL,
+            )
+            name = skill_name
+            description = ""
+            for block in frontmatter_blocks:
+                name_match = re.search(r'^name:\s*(.+)$', block, re.MULTILINE)
+                desc_match = re.search(r'^description:\s*(.+)$', block, re.MULTILINE)
+                if name_match and desc_match:
+                    name = name_match.group(1).strip()
+                    description = desc_match.group(1).strip()
+                    break
+
+            if description:
+                entries.append(f"- **{skill_name}** (`{name}`): {description}")
+            else:
+                entries.append(f"- **{skill_name}**: (no description — use `read_skill` to view)")
+
+        return "\n".join(entries) if entries else ""
+
     def _build_agent_definitions(self) -> dict[str, AgentDefinition]:
         """Load active agents from registry and build SDK AgentDefinition objects.
 
@@ -299,14 +345,18 @@ class ClydeChatManager:
                         f"{memory_content}"
                     )
 
-                # Inject assigned skills (Phase 3D)
-                skills_content = self._load_agent_skills(agent.get("skills", []))
-                if skills_content:
+                # Inject skill summaries for lazy-loading (Phase 3D)
+                skill_summaries = self._load_skill_summaries(agent.get("skills", []))
+                if skill_summaries:
                     prompt += (
                         "\n\n## Assigned Skills\n\n"
-                        "The following skills have been assigned to you. Follow these "
-                        "documented processes when relevant to your tasks.\n\n"
-                        f"{skills_content}"
+                        "You have the following skills available. When a task matches "
+                        "a skill's description, use the `read_skill` tool to load the "
+                        "full skill content before proceeding.\n\n"
+                        f"{skill_summaries}\n\n"
+                        "**Do not guess skill procedures from memory.** Always call "
+                        "`read_skill(name=\"<skill-name>\")` to load the complete "
+                        "instructions before applying a skill."
                     )
 
                 # NOTE: External MCP servers from registry are tracked but not passed
