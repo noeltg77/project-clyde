@@ -412,6 +412,22 @@ export function Sidebar() {
           Triggers
         </button>
 
+        {/* APIs / Webhooks */}
+        <button
+          onClick={() =>
+            setActiveView(
+              activeView === "integrations" ? "chat" : "integrations"
+            )
+          }
+          className={`w-full text-left px-3 py-2 text-sm rounded-[2px] transition-colors ${
+            activeView === "integrations"
+              ? "text-accent-primary bg-bg-tertiary"
+              : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
+          }`}
+        >
+          APIs / Webhooks
+        </button>
+
         {/* Performance */}
         <button
           onClick={() =>

@@ -237,3 +237,46 @@ create trigger trg_tasks_updated_at
   before update on public.tasks
   for each row
   execute function update_tasks_updated_at();
+
+
+-- ============================================
+-- Integrations (APIs & Webhooks)
+-- ============================================
+
+create table if not exists public.integrations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  type text not null check (type in ('api', 'webhook')),
+  base_url text not null default '',
+  method text not null default 'GET',
+  auth_type text not null default 'none',
+  credential_env_key text,
+  headers jsonb default '{}'::jsonb,
+  description text not null default '',
+  documentation_url text,
+  assigned_agents jsonb default '[]'::jsonb,
+  enabled boolean not null default true,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_integrations_type
+  on public.integrations(type);
+
+create index if not exists idx_integrations_enabled
+  on public.integrations(enabled);
+
+create or replace function update_integrations_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_integrations_updated_at on public.integrations;
+create trigger trg_integrations_updated_at
+  before update on public.integrations
+  for each row
+  execute function update_integrations_updated_at();
