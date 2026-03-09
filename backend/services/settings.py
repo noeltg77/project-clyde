@@ -26,6 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "save_uploads_enabled": True,
     "prompt_caching_enabled": True,
     "prevent_sleep_enabled": False,
+    "debug_mode_enabled": False,
 }
 
 # Maps model tier names to Claude API model IDs

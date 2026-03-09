@@ -20,6 +20,7 @@ export type Message = {
   createdAt: string;
   isStreaming?: boolean;
   steps?: MessageStep[];
+  debugPrompts?: { systemPrompt: string; userMessage: string };
 };
 
 export type SessionSummary = {

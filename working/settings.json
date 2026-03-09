@@ -7,5 +7,6 @@
   "proactive_interval_hours": 24,
   "save_uploads_enabled": true,
   "prompt_caching_enabled": true,
-  "prevent_sleep_enabled": false
+  "prevent_sleep_enabled": false,
+  "debug_mode_enabled": false
 }

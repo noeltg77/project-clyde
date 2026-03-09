@@ -2178,6 +2178,21 @@ async def chat_websocket(ws: WebSocket):
                         pass
                     continue  # Skip post-response processing, go back to waiting
 
+                # Send debug prompts if debug mode is enabled
+                if not ws_disconnected:
+                    try:
+                        _debug_settings = load_settings(WORKING_DIR)
+                        if _debug_settings.get("debug_mode_enabled", False):
+                            await ws.send_json({
+                                "type": "debug_prompts",
+                                "data": {
+                                    "system_prompt": manager._last_system_prompt,
+                                    "user_message": manager._last_user_message,
+                                },
+                            })
+                    except Exception:
+                        pass
+
                 # Save Clyde's response + log performance concurrently (fire-and-forget)
                 async def _save_clyde_response():
                     if not full_response:

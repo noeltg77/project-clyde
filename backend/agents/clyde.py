@@ -97,6 +97,10 @@ class ClydeChatManager:
         self._volatile_context: str = ""
         self._volatile_context_sent: bool = False
 
+        # Debug: store prompts sent to the API for the last message
+        self._last_system_prompt: str = ""
+        self._last_user_message: str = ""
+
         # Initialise MCP tools with working directory
         init_tools(working_dir)
 
@@ -628,6 +632,7 @@ class ClydeChatManager:
             self._sdk_session_id = sdk_session_id
 
         system_prompt = self._load_system_prompt()
+        self._last_system_prompt = system_prompt
 
         # Context injection strategy:
         # 1. If we have an SDK session ID → CLI resumes natively (no summary needed)
@@ -737,6 +742,9 @@ class ClydeChatManager:
             content = self._volatile_context + content
             self._volatile_context_sent = True
             logger.info("[MSG] Prepended volatile context to first user message")
+
+        # Store for debug mode
+        self._last_user_message = content
 
         logger.info(f"[MSG] Sending user message: {content[:100]}...")
         await self.client.query(content)

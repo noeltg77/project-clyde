@@ -4,6 +4,7 @@ import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useInsightStore } from "@/stores/insight-store-provider";
+import { useSettingsStore } from "@/stores/settings-store-provider";
 import { useTaskStore } from "@/stores/task-store-provider";
 import type { Task, TaskColumn } from "@/stores/task-store";
 import {
@@ -50,6 +51,9 @@ export function ChatContainer() {
   const setAgentActive = useAgentStore((s) => s.setAgentActive);
   const clearActiveAgents = useAgentStore((s) => s.clearActiveAgents);
 
+  // Settings store actions
+  const setDebugEnabled = useSettingsStore((s) => s.setDebugEnabled);
+
   // Insight store actions
   const addInsight = useInsightStore((s) => s.addInsight);
 
@@ -64,6 +68,8 @@ export function ChatContainer() {
   // Track current streaming message id and the last agent message (for cost attachment)
   const streamingMsgId = useRef<string | null>(null);
   const lastAgentMsgId = useRef<string | null>(null);
+  // Persists after result is processed so debug_prompts can still attach to it
+  const lastFinishedMsgId = useRef<string | null>(null);
 
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
@@ -281,6 +287,8 @@ export function ChatContainer() {
               costUsd: (msg.data.total_cost_usd as number) || 0,
             });
           }
+          // Preserve for debug_prompts which arrives after result
+          lastFinishedMsgId.current = costTarget;
           streamingMsgId.current = null;
           lastAgentMsgId.current = null;
           setStreaming(false);
@@ -507,6 +515,20 @@ export function ChatContainer() {
           removeColumnFromStore(msg.data.id as string);
           break;
         }
+
+        case "debug_prompts": {
+          // Attach debug prompt data to the last finished agent message
+          const debugTarget = lastFinishedMsgId.current;
+          if (debugTarget) {
+            updateMessage(debugTarget, {
+              debugPrompts: {
+                systemPrompt: msg.data.system_prompt as string,
+                userMessage: msg.data.user_message as string,
+              },
+            });
+          }
+          break;
+        }
       }
     },
     [
@@ -651,9 +673,20 @@ export function ChatContainer() {
       }
     }
 
+    async function fetchDebugSetting() {
+      try {
+        const res = await fetch(`${API_URL}/api/registry/settings`);
+        const data = await res.json();
+        setDebugEnabled(!!data.debug_mode_enabled);
+      } catch {
+        // ignore
+      }
+    }
+
     fetchSessions();
     fetchAgents();
-  }, [setSessions, setAgents, setTeams, setOrchestrator]);
+    fetchDebugSetting();
+  }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
 
   // Connect to WebSocket on mount (new session) — runs once
   useEffect(() => {
