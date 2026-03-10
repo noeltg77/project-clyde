@@ -13,8 +13,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-import anthropic
-
 from services.registry import _write_json_atomic, _teams_index_path, _team_file_path
 
 logger = logging.getLogger(__name__)
@@ -65,8 +63,10 @@ WORKFLOW_EXAMPLE = """{
 }"""
 
 
-def _get_anthropic_client() -> anthropic.Anthropic:
+def _get_anthropic_client():
     """Create an Anthropic client, raising a clear error if the key is missing."""
+    import anthropic
+
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise ValueError(
