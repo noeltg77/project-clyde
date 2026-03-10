@@ -372,10 +372,17 @@ async def list_teams_tool(args: dict[str, Any]) -> dict[str, Any]:
         for t in teams:
             members = get_team_members(_working_dir, t["id"])
             member_names = [m["name"] for m in members] if members else ["(none)"]
+            # Load workflow count from team file
+            try:
+                team_data = load_team_file(_working_dir, t["id"])
+                workflow_count = len(team_data.get("workflows", []))
+            except Exception:
+                workflow_count = 0
             lines.append(
                 f"  - {t['name']} ({t['id']})\n"
                 f"    Color: {t['color']}\n"
-                f"    Members ({len(members)}): {', '.join(member_names)}"
+                f"    Members ({len(members)}): {', '.join(member_names)}\n"
+                f"    Workflows: {workflow_count}"
             )
 
         return _text_response("\n".join(lines))
@@ -2386,6 +2393,448 @@ async def call_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Failed to call integration: {str(e)}")
 
 
+# ─── Workflow Tools (Phase 10) ─────────────────────────────────────
+
+
+def _find_workflow(name_or_id: str) -> str | None:
+    """Find a workflow file by ID, name, or sanitised name. Returns abs path or None."""
+    workflows_dir = os.path.join(_working_dir, "workflows")
+    if not os.path.isdir(workflows_dir):
+        return None
+
+    # Try exact ID match
+    try:
+        exact = _safe_path(f"workflows/{name_or_id}.json")
+        if os.path.exists(exact):
+            return exact
+    except ValueError:
+        pass
+
+    # Scan all workflow files for a name match
+    for fname in os.listdir(workflows_dir):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(workflows_dir, fname)
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)
+            if data.get("name", "").lower() == name_or_id.lower():
+                return fpath
+            if data.get("id", "").lower() == name_or_id.lower():
+                return fpath
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    # Try sanitised kebab-case
+    sanitised = name_or_id.lower().replace(" ", "-").replace("_", "-")
+    try:
+        san_path = _safe_path(f"workflows/{sanitised}.json")
+        if os.path.exists(san_path):
+            return san_path
+    except ValueError:
+        pass
+
+    return None
+
+
+@tool(
+    "create_workflow",
+    "Create a new workflow — a multi-stage process that defines how agents collaborate "
+    "on a specific type of task. Workflows belong to teams and describe stage sequences, "
+    "agent assignments, rules, and failure handling. "
+    "stages must be a JSON array of stage objects with: stage (number), name, agent, action, "
+    "inputs (array), outputs (array), blocking (bool). "
+    "rules is an optional JSON array of constraint strings.",
+    {
+        "name": str,
+        "description": str,
+        "team_name_or_id": str,
+        "stages": str,
+        "rules": str,
+        "on_failure": str,
+    },
+)
+async def create_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new workflow and assign it to a team."""
+    try:
+        name = args.get("name", "").strip()
+        description = args.get("description", "").strip()
+        team_identifier = args.get("team_name_or_id", "").strip()
+        stages_str = args.get("stages", "").strip()
+        rules_str = args.get("rules", "").strip()
+        on_failure = args.get("on_failure", "").strip()
+
+        if not name:
+            return _error_response("Workflow name is required.")
+        if not description:
+            return _error_response("Workflow description is required.")
+        if not team_identifier:
+            return _error_response("team_name_or_id is required.")
+        if not stages_str:
+            return _error_response("stages is required (JSON array of stage objects).")
+
+        # Parse stages
+        try:
+            stages = json.loads(stages_str)
+            if not isinstance(stages, list):
+                return _error_response("stages must be a JSON array.")
+        except json.JSONDecodeError:
+            return _error_response("stages must be valid JSON.")
+
+        # Parse rules
+        rules: list[str] = []
+        if rules_str:
+            try:
+                rules = json.loads(rules_str)
+                if not isinstance(rules, list):
+                    rules = [rules_str]
+            except json.JSONDecodeError:
+                rules = [r.strip() for r in rules_str.split(",") if r.strip()]
+
+        # Resolve team
+        team = get_team_by_name(_working_dir, team_identifier)
+        if not team:
+            team = get_team_by_id(_working_dir, team_identifier)
+        if not team:
+            return _error_response(f"Team '{team_identifier}' not found.")
+
+        # Generate ID
+        workflow_id = name.lower().replace(" ", "-").replace("_", "-")
+        workflow_id = "".join(c for c in workflow_id if c.isalnum() or c == "-")
+
+        # Check for existing
+        try:
+            filepath = _safe_path(f"workflows/{workflow_id}.json")
+        except ValueError as e:
+            return _error_response(str(e))
+
+        if os.path.exists(filepath):
+            return _error_response(
+                f"Workflow '{workflow_id}' already exists. Use update_workflow to modify it."
+            )
+
+        # Build workflow JSON
+        now = datetime.now(timezone.utc).isoformat()
+        workflow = {
+            "id": workflow_id,
+            "name": name,
+            "description": description,
+            "created_at": now,
+            "version": 1,
+            "team": team["id"],
+            "stages": stages,
+            "rules": rules,
+            "on_failure": on_failure or "Report back to the user before proceeding",
+        }
+
+        # Write workflow file
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w") as f:
+            json.dump(workflow, f, indent=2)
+
+        # Add workflow ID to team file
+        try:
+            team_data = load_team_file(_working_dir, team["id"])
+            wf_list = team_data.get("workflows", [])
+            if workflow_id not in wf_list:
+                wf_list.append(workflow_id)
+                update_team(_working_dir, team["id"], {"workflows": wf_list})
+        except Exception:
+            pass  # Workflow file saved — team link is non-critical
+
+        return _text_response(
+            f"Created workflow '{name}' ({workflow_id}) with {len(stages)} stages.\n"
+            f"Assigned to team: {team['name']}"
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to create workflow: {str(e)}")
+
+
+@tool(
+    "list_workflows",
+    "List workflows with summaries (name, description, team, stage count). "
+    "Optionally filter by team. Does NOT return full stage details — "
+    "use read_workflow to load the complete workflow.",
+    {"team_name_or_id": str},
+)
+async def list_workflows_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List workflows with summary info."""
+    try:
+        team_filter = args.get("team_name_or_id", "").strip()
+        workflows_dir = os.path.join(_working_dir, "workflows")
+
+        if not os.path.isdir(workflows_dir):
+            return _text_response("No workflows directory found. No workflows have been created yet.")
+
+        files = sorted(f for f in os.listdir(workflows_dir) if f.endswith(".json"))
+        if not files:
+            return _text_response("No workflows found.")
+
+        # Resolve team filter if provided
+        filter_team_id = None
+        if team_filter:
+            team = get_team_by_name(_working_dir, team_filter)
+            if not team:
+                team = get_team_by_id(_working_dir, team_filter)
+            if team:
+                filter_team_id = team["id"]
+            else:
+                return _text_response(f"Team '{team_filter}' not found.")
+
+        # Load team names for display
+        teams_map: dict[str, str] = {}
+        try:
+            all_teams = get_teams(_working_dir)
+            for t in all_teams:
+                teams_map[t["id"]] = t["name"]
+        except Exception:
+            pass
+
+        entries = []
+        for fname in files:
+            fpath = os.path.join(workflows_dir, fname)
+            try:
+                with open(fpath, "r") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            wf_team = data.get("team", "")
+            if filter_team_id and wf_team != filter_team_id:
+                continue
+
+            team_name = teams_map.get(wf_team, wf_team)
+            stage_count = len(data.get("stages", []))
+            entries.append(
+                f"  - {data.get('name', fname[:-5])} (ID: {data.get('id', fname[:-5])})\n"
+                f"    Description: {data.get('description', '(none)')}\n"
+                f"    Team: {team_name}\n"
+                f"    Stages: {stage_count} | Version: {data.get('version', 1)}"
+            )
+
+        if not entries:
+            if filter_team_id:
+                return _text_response(f"No workflows found for team '{team_filter}'.")
+            return _text_response("No workflows found.")
+
+        header = f"Workflows ({len(entries)} total):\n"
+        return _text_response(header + "\n".join(entries))
+
+    except Exception as e:
+        return _error_response(f"Failed to list workflows: {str(e)}")
+
+
+@tool(
+    "read_workflow",
+    "Read the full content of a workflow including all stages, rules, and failure handling. "
+    "Use list_workflows first to find the right workflow, then read it by name or ID.",
+    {"name_or_id": str},
+)
+async def read_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Read a workflow's full JSON content."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found in /working/workflows/.")
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        return _text_response(json.dumps(data, indent=2))
+
+    except Exception as e:
+        return _error_response(f"Failed to read workflow: {str(e)}")
+
+
+@tool(
+    "update_workflow",
+    "Update an existing workflow. Can modify description, stages, rules, or failure handling. "
+    "Increments the version number automatically. "
+    "stages and rules must be JSON strings if provided.",
+    {
+        "name_or_id": str,
+        "description": str,
+        "stages": str,
+        "rules": str,
+        "on_failure": str,
+    },
+)
+async def update_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update a workflow with partial changes."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found.")
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        old_version = data.get("version", 1)
+
+        # Apply provided fields
+        description = args.get("description", "").strip()
+        if description:
+            data["description"] = description
+
+        stages_str = args.get("stages", "").strip()
+        if stages_str:
+            try:
+                stages = json.loads(stages_str)
+                if isinstance(stages, list):
+                    data["stages"] = stages
+            except json.JSONDecodeError:
+                return _error_response("stages must be valid JSON.")
+
+        rules_str = args.get("rules", "").strip()
+        if rules_str:
+            try:
+                rules = json.loads(rules_str)
+                if isinstance(rules, list):
+                    data["rules"] = rules
+            except json.JSONDecodeError:
+                data["rules"] = [r.strip() for r in rules_str.split(",") if r.strip()]
+
+        on_failure = args.get("on_failure", "").strip()
+        if on_failure:
+            data["on_failure"] = on_failure
+
+        data["version"] = old_version + 1
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return _text_response(
+            f"Updated workflow '{data.get('name', name_or_id)}' "
+            f"(v{old_version} → v{data['version']})"
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to update workflow: {str(e)}")
+
+
+@tool(
+    "delete_workflow",
+    "Delete a workflow. Removes the workflow file and unlinks it from its team.",
+    {"name_or_id": str},
+)
+async def delete_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete a workflow and remove it from its team."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found.")
+
+        # Read workflow to get team reference
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        workflow_id = data.get("id", "")
+        workflow_name = data.get("name", name_or_id)
+        team_id = data.get("team", "")
+
+        # Remove from team's workflows array
+        if team_id:
+            try:
+                team_data = load_team_file(_working_dir, team_id)
+                wf_list = team_data.get("workflows", [])
+                if workflow_id in wf_list:
+                    wf_list.remove(workflow_id)
+                    update_team(_working_dir, team_id, {"workflows": wf_list})
+            except Exception:
+                pass  # Non-critical — file deletion is the primary action
+
+        # Delete the workflow file
+        os.remove(filepath)
+
+        return _text_response(f"Deleted workflow '{workflow_name}' ({workflow_id}).")
+
+    except Exception as e:
+        return _error_response(f"Failed to delete workflow: {str(e)}")
+
+
+@tool(
+    "assign_workflow",
+    "Assign a workflow to a different team. Moves the team reference from the old team to the new one.",
+    {"workflow_name_or_id": str, "team_name_or_id": str},
+)
+async def assign_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Move a workflow from one team to another."""
+    try:
+        wf_identifier = args.get("workflow_name_or_id", "").strip()
+        team_identifier = args.get("team_name_or_id", "").strip()
+
+        if not wf_identifier:
+            return _error_response("workflow_name_or_id is required.")
+        if not team_identifier:
+            return _error_response("team_name_or_id is required.")
+
+        filepath = _find_workflow(wf_identifier)
+        if not filepath:
+            return _error_response(f"Workflow '{wf_identifier}' not found.")
+
+        # Resolve target team
+        target_team = get_team_by_name(_working_dir, team_identifier)
+        if not target_team:
+            target_team = get_team_by_id(_working_dir, team_identifier)
+        if not target_team:
+            return _error_response(f"Team '{team_identifier}' not found.")
+
+        # Load workflow
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        workflow_id = data.get("id", "")
+        old_team_id = data.get("team", "")
+
+        # Remove from old team
+        if old_team_id:
+            try:
+                old_team_data = load_team_file(_working_dir, old_team_id)
+                wf_list = old_team_data.get("workflows", [])
+                if workflow_id in wf_list:
+                    wf_list.remove(workflow_id)
+                    update_team(_working_dir, old_team_id, {"workflows": wf_list})
+            except Exception:
+                pass
+
+        # Add to new team
+        try:
+            new_team_data = load_team_file(_working_dir, target_team["id"])
+            wf_list = new_team_data.get("workflows", [])
+            if workflow_id not in wf_list:
+                wf_list.append(workflow_id)
+                update_team(_working_dir, target_team["id"], {"workflows": wf_list})
+        except Exception:
+            pass
+
+        # Update workflow's team field
+        data["team"] = target_team["id"]
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return _text_response(
+            f"Assigned workflow '{data.get('name', wf_identifier)}' to team '{target_team['name']}'."
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to assign workflow: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -2452,5 +2901,12 @@ registry_mcp_server = create_sdk_mcp_server(
         delete_integration_tool,
         assign_integration_tool,
         call_integration_tool,
+        # Phase 10: Workflows
+        create_workflow_tool,
+        list_workflows_tool,
+        read_workflow_tool,
+        update_workflow_tool,
+        delete_workflow_tool,
+        assign_workflow_tool,
     ],
 )

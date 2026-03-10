@@ -64,6 +64,9 @@ _AUTO_ALLOW_TOOLS = {
     "create_integration", "list_integrations", "get_integration",
     "update_integration", "delete_integration", "assign_integration",
     "call_integration",
+    # Phase 10: Workflows
+    "create_workflow", "list_workflows", "read_workflow",
+    "update_workflow", "delete_workflow", "assign_workflow",
 }
 
 
