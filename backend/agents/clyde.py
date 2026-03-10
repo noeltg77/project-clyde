@@ -333,6 +333,9 @@ class ClydeChatManager:
         except Exception:
             return {}
 
+        settings = load_settings(self.working_dir)
+        subagent_default = settings.get("subagent_default_model", "sonnet")
+
         agents: dict[str, AgentDefinition] = {}
         for agent in registry.get("agents", []):
             if agent.get("status") == "active":
@@ -387,7 +390,7 @@ class ClydeChatManager:
                     description=agent.get("role", "Specialist agent"),
                     prompt=prompt,
                     tools=agent.get("tools"),
-                    model=agent.get("model", "sonnet"),
+                    model=agent.get("model", subagent_default),
                 )
         return agents
 

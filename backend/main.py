@@ -1164,6 +1164,10 @@ async def update_registry_settings(body: dict):
                     update_agent(WORKING_DIR, "clyde-001", {"model": model})
                 except Exception as e:
                     logger.warning(f"[API] Failed to update orchestrator model in registry: {e}")
+        if "subagent_default_model" in body:
+            sa_model = body["subagent_default_model"]
+            if sa_model in ("opus", "sonnet", "haiku"):
+                updates["subagent_default_model"] = sa_model
         if "self_edit_enabled" in body:
             updates["self_edit_enabled"] = bool(body["self_edit_enabled"])
         if "concurrency_cap" in body:

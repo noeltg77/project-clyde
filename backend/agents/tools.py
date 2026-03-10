@@ -36,6 +36,7 @@ from services.registry import (
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
+from services.settings import load_settings
 from services.supabase_client import search_messages
 
 # Module-level working_dir — set by init_tools() before server is used
@@ -103,7 +104,9 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
     try:
         name = args.get("name", "").strip()
         role = args.get("role", "").strip()
-        model = args.get("model", "sonnet").strip().lower()
+        settings = load_settings(_working_dir)
+        default_model = settings.get("subagent_default_model", "sonnet")
+        model = args.get("model", default_model).strip().lower()
         gender = args.get("gender", "male").strip().lower()
         system_prompt = args.get("system_prompt", "").strip()
         tools_str = args.get("tools", "")

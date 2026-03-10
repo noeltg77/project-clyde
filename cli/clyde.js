@@ -126,6 +126,11 @@ async function promptWithValidation(question, validate, errorMsg, { secret = fal
   }
 }
 
+async function promptYesNo(question) {
+  const answer = await prompt(`${question} (y/n):`);
+  return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
+}
+
 // ─── Shell helpers (safe, no injection) ─────────────────────────────
 function npmInstall(cwd) {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -249,6 +254,17 @@ function checkPrerequisites() {
 // ─── Setup Wizard ───────────────────────────────────────────────────
 async function runSetupWizard() {
   console.log(C.bold(C.green('  FIRST-TIME SETUP\n')));
+
+  // Cost-saving mode — ask first
+  console.log(C.bold(C.orange('  Model Configuration')));
+  console.log('');
+  console.log(C.gray('  Default: Clyde uses Opus, subagents use Sonnet'));
+  console.log(C.gray('  Cost-saving: Clyde uses Sonnet, subagents use Haiku'));
+  console.log(C.gray('  (This can be changed later in Settings)'));
+  console.log('');
+  const costSaving = await promptYesNo('Enable cost-saving mode?');
+  console.log('');
+
   console.log(C.gray('  You\'ll need your Supabase dashboard and API keys ready.'));
   console.log(C.gray('  Credentials are stored locally in .env.local and never shared.\n'));
 
@@ -315,7 +331,7 @@ async function runSetupWizard() {
     WORKING_DIR: WORKING_DIR,
   };
 
-  return { config, projectRef, dbPassword };
+  return { config, projectRef, dbPassword, costSaving };
 }
 
 // ─── Schema Deployment ──────────────────────────────────────────────
@@ -457,6 +473,39 @@ function ensureWorkingDir() {
   }
 }
 
+// ─── Cost-Saving Mode ────────────────────────────────────────────────
+function applyCostSavingMode() {
+  const spinner = createSpinner('Applying cost-saving configuration...');
+
+  try {
+    // Update settings.json — Clyde → Sonnet, Subagents → Haiku
+    const settingsPath = path.join(WORKING_DIR, 'settings.json');
+    let settings = {};
+    if (fs.existsSync(settingsPath)) {
+      try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { /* use empty */ }
+    }
+    settings.clyde_model = 'sonnet';
+    settings.subagent_default_model = 'haiku';
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+    // Update teams.default.json orchestrator model
+    const teamsDefaultPath = path.join(WORKING_DIR, 'teams', 'teams.default.json');
+    if (fs.existsSync(teamsDefaultPath)) {
+      try {
+        const teamsData = JSON.parse(fs.readFileSync(teamsDefaultPath, 'utf8'));
+        if (teamsData.orchestrator) {
+          teamsData.orchestrator.model = 'sonnet';
+        }
+        fs.writeFileSync(teamsDefaultPath, JSON.stringify(teamsData, null, 2));
+      } catch { /* non-critical */ }
+    }
+
+    spinner.succeed('Cost-saving mode enabled (Clyde: Sonnet, Subagents: Haiku)');
+  } catch (err) {
+    spinner.fail(`Failed to apply cost-saving mode: ${err.message}`);
+  }
+}
+
 // ─── App Launcher ───────────────────────────────────────────────────
 function launchApp() {
   console.log(C.bold(C.green('  STARTING CLYDE\n')));
@@ -557,7 +606,7 @@ async function main() {
   if (isFirstRun()) {
     checkPrerequisites();
 
-    const { config, projectRef, dbPassword } = await runSetupWizard();
+    const { config, projectRef, dbPassword, costSaving } = await runSetupWizard();
 
     // Write .env.local
     console.log('');
@@ -573,6 +622,11 @@ async function main() {
 
     // Ensure working directory
     ensureWorkingDir();
+
+    // Apply cost-saving mode if selected
+    if (costSaving) {
+      applyCostSavingMode();
+    }
 
     // Done
     console.log('');

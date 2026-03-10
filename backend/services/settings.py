@@ -17,6 +17,7 @@ from typing import Any
 # picked up on next load even if the user's settings.json doesn't have them.
 DEFAULTS: dict[str, Any] = {
     "clyde_model": "opus",
+    "subagent_default_model": "sonnet",
     "self_edit_enabled": True,
     "concurrency_cap": 5,
     "max_team_size": 3,
