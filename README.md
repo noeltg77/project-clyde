@@ -88,8 +88,8 @@ You'll also need accounts (all have free tiers):
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/noeltg77/Project-Clyde-EA.git
-cd Project-Clyde-EA
+git clone https://github.com/noeltg77/Project-Clyde.git
+cd Project-Clyde
 ```
 
 ### 2. Run the CLI
@@ -169,7 +169,7 @@ You can also run the services individually if you prefer separate terminals:
 ## Project Structure
 
 ```
-Project-Clyde-EA/
+Project-Clyde/
 ├── cli/               CLI setup wizard and app launcher
 │   └── clyde.js       Entry point for `npm run clyde`
 ├── db/                Database schema
@@ -223,7 +223,7 @@ BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000
 
 # Working directory — replace with the actual path on YOUR computer
-WORKING_DIR=/full/path/to/Project-Clyde-EA/working
+WORKING_DIR=/full/path/to/Project-Clyde/working
 ```
 
 To find your full path for `WORKING_DIR`:
