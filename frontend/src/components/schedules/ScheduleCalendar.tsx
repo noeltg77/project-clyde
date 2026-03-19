@@ -161,7 +161,12 @@ const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /* ── Component ─────────────────────────────────────────────────── */
 
-export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
+type ScheduleCalendarProps = {
+  schedules: Schedule[];
+  onEditSchedule?: (schedule: Schedule) => void;
+};
+
+export function ScheduleCalendar({ schedules, onEditSchedule }: ScheduleCalendarProps) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -174,12 +179,6 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
     const map = new Map<number, DayEntry[]>();
     for (const s of schedules) {
       const entries = getScheduleDaysInMonth(s, viewYear, viewMonth);
-      for (let day = 1; day <= 31; day++) {
-        // Each entry corresponds to the day's index in the month
-        // getScheduleDaysInMonth returns one entry per matching day, in order
-      }
-      // Re-approach: collect per-day
-      let dayIdx = 0;
       const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
       if ((s.schedule_type ?? "recurring") === "one_off") {
@@ -192,11 +191,10 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
         }
       } else {
         // Recurring: entries are in day order, one per matching day
-        // We need to re-derive which days matched
         if (!s.cron) continue;
         const parts = s.cron.split(" ");
         if (parts.length !== 5) continue;
-        const [minF, hourF, domF, monF, dowF] = parts;
+        const [, , domF, monF, dowF] = parts;
         if (monF !== "*") {
           const months = monF.split(",").map((m) => parseInt(m));
           if (!months.includes(viewMonth + 1)) continue;
@@ -270,19 +268,19 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
   }
 
   return (
-    <div className="rounded-[2px] bg-bg-tertiary border border-border overflow-hidden">
+    <div className="rounded-[2px] bg-bg-primary border border-border overflow-hidden">
       {/* Month header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <button
           onClick={prevMonth}
-          className="w-7 h-7 flex items-center justify-center rounded-[2px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-[2px] text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-text-primary font-display tracking-wide">
+          <h3 className="text-base font-semibold text-text-primary font-display tracking-wide">
             {MONTH_NAMES[viewMonth]} {viewYear}
           </h3>
           {(viewMonth !== today.getMonth() || viewYear !== today.getFullYear()) && (
@@ -296,18 +294,18 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
         </div>
         <button
           onClick={nextMonth}
-          className="w-7 h-7 flex items-center justify-center rounded-[2px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-[2px] text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
       </div>
 
       {/* Day-of-week headers */}
-      <div className="grid grid-cols-7 border-b border-border">
+      <div className="grid grid-cols-7 border-b border-border bg-bg-secondary/30">
         {DAY_HEADERS.map((d) => (
-          <div key={d} className="py-2 text-center text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50">
+          <div key={d} className="py-2.5 text-center text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50">
             {d}
           </div>
         ))}
@@ -339,22 +337,22 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
                         selectedDay === cell.day ? null : cell.day
                       );
                     }}
-                    className={`relative min-h-[72px] p-1.5 border-b border-r border-border text-left transition-colors ${
+                    className={`relative min-h-[96px] p-2.5 border-b border-r border-border/50 text-left transition-colors ${
                       cell.isCurrentMonth
                         ? hasSchedules
-                          ? "hover:bg-bg-secondary cursor-pointer"
+                          ? "hover:bg-bg-tertiary/60 cursor-pointer"
                           : "cursor-default"
-                        : "cursor-default"
-                    } ${isSelected ? "bg-bg-secondary" : ""}`}
+                        : "bg-bg-primary/50 cursor-default"
+                    } ${isSelected ? "bg-bg-tertiary/80" : ""}`}
                   >
                     {/* Day number */}
                     <span
-                      className={`text-[11px] font-medium inline-flex items-center justify-center w-5 h-5 rounded-full ${
+                      className={`text-xs font-medium inline-flex items-center justify-center w-6 h-6 rounded-full ${
                         isTodayCell
                           ? "bg-accent-primary text-bg-primary font-bold"
                           : cell.isCurrentMonth
                           ? "text-text-primary"
-                          : "text-text-secondary/20"
+                          : "text-text-secondary/15"
                       }`}
                     >
                       {cell.day}
@@ -362,7 +360,7 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
 
                     {/* Schedule dots */}
                     {cell.isCurrentMonth && entries.length > 0 && (
-                      <div className="flex flex-wrap gap-0.5 mt-1">
+                      <div className="flex flex-wrap gap-1 mt-1.5">
                         {entries.slice(0, 5).map((entry, i) => (
                           <div
                             key={i}
@@ -398,21 +396,22 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
                   transition={{ duration: 0.2, ease: "easeInOut" }}
                   className="overflow-hidden"
                 >
-                  <div className="bg-bg-secondary border-b border-border border-l-2 border-l-accent-primary px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-2">
+                  <div className="bg-bg-secondary/50 border-b border-border border-l-2 border-l-accent-primary px-5 py-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
                       {selectedDay}{" "}
                       {MONTH_NAMES[viewMonth].slice(0, 3)} — {selectedDayEntries.length} schedule
                       {selectedDayEntries.length !== 1 ? "s" : ""}
                     </p>
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {selectedDayEntries.map((entry, i) => (
-                        <div
+                        <button
                           key={i}
-                          className={`flex items-center gap-3 py-1.5 px-2 rounded-[2px] ${
+                          onClick={() => onEditSchedule?.(entry.schedule)}
+                          className={`w-full flex items-center gap-3 py-2 px-3 rounded-[2px] text-left transition-colors group/entry ${
                             entry.schedule.enabled
-                              ? "bg-bg-tertiary"
-                              : "bg-bg-tertiary/50 opacity-50"
-                          }`}
+                              ? "bg-bg-tertiary hover:bg-bg-tertiary/80 hover:border-accent-primary/30"
+                              : "bg-bg-tertiary/50 opacity-50 hover:opacity-70"
+                          } border border-transparent hover:border-accent-primary/20`}
                         >
                           {/* Type indicator dot */}
                           <div
@@ -425,7 +424,7 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
                             }`}
                           />
                           {/* Name */}
-                          <span className="text-xs text-text-primary font-medium truncate flex-1">
+                          <span className="text-xs text-text-primary font-medium truncate flex-1 group-hover/entry:text-accent-primary transition-colors">
                             {entry.schedule.name}
                           </span>
                           {/* Time */}
@@ -450,7 +449,22 @@ export function ScheduleCalendar({ schedules }: { schedules: Schedule[] }) {
                               paused
                             </span>
                           )}
-                        </div>
+                          {/* Edit hint */}
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="shrink-0 text-text-secondary/20 group-hover/entry:text-accent-primary/60 transition-colors"
+                          >
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
                       ))}
                     </div>
                   </div>

@@ -387,7 +387,13 @@ export function ScheduleManager() {
                 </p>
               </div>
             ) : (
-              <ScheduleCalendar schedules={schedules} />
+              <ScheduleCalendar
+                schedules={schedules}
+                onEditSchedule={(s) => {
+                  handleEdit(s);
+                  setViewMode("list");
+                }}
+              />
             )
           )}
 
