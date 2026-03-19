@@ -111,6 +111,7 @@ export function ScheduleManager() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [editSource, setEditSource] = useState<"list" | "calendar">("list");
   const [formData, setFormData] = useState<ScheduleFormData>({
     ...defaultFormData,
   });
@@ -250,7 +251,9 @@ export function ScheduleManager() {
     setEditingId(null);
     setFormData({ ...defaultFormData });
     setShowForm(false);
-  }, []);
+    setViewMode(editSource);
+    setEditSource("list");
+  }, [editSource]);
 
   /* ── Update handler — PATCH existing schedule ──────────────── */
 
@@ -292,12 +295,14 @@ export function ScheduleManager() {
         setEditingId(null);
         setFormData({ ...defaultFormData });
         setShowForm(false);
+        setViewMode(editSource);
+        setEditSource("list");
         await fetchSchedules();
       } catch (err) {
         console.error("Failed to update schedule:", err);
       }
     },
-    [editingId, formData, fetchSchedules]
+    [editingId, formData, fetchSchedules, editSource]
   );
 
   /* ── Render ────────────────────────────────────────────────── */
@@ -331,10 +336,12 @@ export function ScheduleManager() {
           <button
             onClick={() => {
               if (showForm) {
-                // Cancel — reset form + editing state
+                // Cancel — reset form + editing state, return to source view
                 setShowForm(false);
                 setEditingId(null);
                 setFormData({ ...defaultFormData });
+                setViewMode(editSource);
+                setEditSource("list");
               } else {
                 setShowForm(true);
               }
@@ -390,8 +397,8 @@ export function ScheduleManager() {
               <ScheduleCalendar
                 schedules={schedules}
                 onEditSchedule={(s) => {
+                  setEditSource("calendar");
                   handleEdit(s);
-                  setViewMode("list");
                 }}
               />
             )

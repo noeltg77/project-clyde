@@ -366,7 +366,7 @@ export function ScheduleCalendar({ schedules, onEditSchedule }: ScheduleCalendar
                             key={i}
                             className={`w-1.5 h-1.5 rounded-full ${
                               !entry.schedule.enabled
-                                ? "bg-text-secondary/20"
+                                ? "bg-text-secondary/50 ring-1 ring-text-secondary/30"
                                 : (entry.schedule.schedule_type ?? "recurring") === "one_off"
                                 ? "bg-accent-secondary"
                                 : "bg-accent-primary"
@@ -417,7 +417,7 @@ export function ScheduleCalendar({ schedules, onEditSchedule }: ScheduleCalendar
                           <div
                             className={`w-2 h-2 rounded-full shrink-0 ${
                               !entry.schedule.enabled
-                                ? "bg-text-secondary/30"
+                                ? "bg-text-secondary/50 ring-1 ring-text-secondary/30"
                                 : (entry.schedule.schedule_type ?? "recurring") === "one_off"
                                 ? "bg-accent-secondary"
                                 : "bg-accent-primary"
@@ -473,6 +473,28 @@ export function ScheduleCalendar({ schedules, onEditSchedule }: ScheduleCalendar
             </AnimatePresence>
           </div>
         ))}
+      </div>
+
+      {/* Legend / Key */}
+      <div className="flex items-center gap-5 px-5 py-3 border-t border-border">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-accent-primary" />
+          <span className="text-[10px] text-text-secondary/60">Recurring (active)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-accent-secondary" />
+          <span className="text-[10px] text-text-secondary/60">One-off (active)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-text-secondary/50 ring-1 ring-text-secondary/30" />
+          <span className="text-[10px] text-text-secondary/60">Paused</span>
+        </div>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <div className="w-5 h-5 rounded-full bg-accent-primary flex items-center justify-center">
+            <span className="text-[9px] font-bold text-bg-primary">19</span>
+          </div>
+          <span className="text-[10px] text-text-secondary/60">Today</span>
+        </div>
       </div>
     </div>
   );
