@@ -8,6 +8,7 @@ import {
   parseCronToForm,
   type ScheduleFormData,
 } from "./ScheduleForm";
+import { ScheduleCalendar } from "./ScheduleCalendar";
 
 const API_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -112,6 +113,7 @@ export function ScheduleManager() {
   const [formData, setFormData] = useState<ScheduleFormData>({
     ...defaultFormData,
   });
+  const [viewMode, setViewMode] = useState<"list" | "plan">("list");
 
   const fetchSchedules = useCallback(async () => {
     try {
@@ -305,9 +307,27 @@ export function ScheduleManager() {
       {/* Header */}
       <div className="p-6 pb-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary font-display">
-            Schedules
-          </h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-text-primary font-display">
+              Schedules
+            </h2>
+            {/* View toggle */}
+            <div className="flex gap-0">
+              {(["list", "plan"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+                    viewMode === mode
+                      ? "border-accent-primary text-accent-primary bg-accent-primary/10 z-10"
+                      : "border-border text-text-secondary/40 hover:text-text-secondary/60"
+                  } ${mode === "list" ? "rounded-l-[2px]" : "rounded-r-[2px] -ml-px"}`}
+                >
+                  {mode === "list" ? "List" : "Plan"}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={() => {
               if (showForm) {
@@ -343,147 +363,157 @@ export function ScheduleManager() {
             />
           )}
 
-          {/* Loading state */}
-          {loading && (
-            <div className="space-y-3">
-              {[1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-24 bg-bg-tertiary animate-pulse rounded-[2px]"
-                />
-              ))}
-            </div>
+          {/* Calendar view */}
+          {viewMode === "plan" && !loading && (
+            <ScheduleCalendar schedules={schedules} onEdit={handleEdit} />
           )}
 
-          {/* Empty state */}
-          {!loading && schedules.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-sm text-text-secondary/50">
-                No schedules yet
-              </p>
-              <p className="text-[11px] text-text-secondary/30 mt-1">
-                Create one above or ask Clyde to schedule a task
-              </p>
-            </div>
-          )}
+          {/* List view */}
+          {viewMode === "list" && (
+            <>
+              {/* Loading state */}
+              {loading && (
+                <div className="space-y-3">
+                  {[1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="h-24 bg-bg-tertiary animate-pulse rounded-[2px]"
+                    />
+                  ))}
+                </div>
+              )}
 
-          {/* Schedule list */}
-          {schedules.map((s) => (
-            <div
-              key={s.id}
-              className="group p-4 rounded-[2px] bg-bg-tertiary border border-border hover:border-accent-primary/20 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <p className="text-sm font-medium text-text-primary">
-                      {s.name}
-                    </p>
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded-[2px] ${
-                        (s.schedule_type ?? "recurring") === "one_off"
-                          ? "text-accent-secondary/70 bg-accent-secondary/10"
-                          : "text-text-secondary/60 bg-bg-secondary"
-                      }`}
-                    >
-                      {formatScheduleBadge(s)}
-                    </span>
-                  </div>
-                  {/* Prompt */}
-                  <p className="text-[12px] text-text-secondary/50 mt-1">
-                    {s.prompt}
+              {/* Empty state */}
+              {!loading && schedules.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <p className="text-sm text-text-secondary/50">
+                    No schedules yet
+                  </p>
+                  <p className="text-[11px] text-text-secondary/30 mt-1">
+                    Create one above or ask Clyde to schedule a task
                   </p>
                 </div>
-                <div className="flex items-center gap-2 ml-4 shrink-0">
-                  {/* Toggle / Completed badge */}
-                  {isOneOffCompleted(s) ? (
-                    <span className="text-[10px] text-text-secondary/40 px-1.5 py-0.5 border border-border rounded-[2px]">
-                      Completed
+              )}
+
+              {/* Schedule list */}
+              {schedules.map((s) => (
+                <div
+                  key={s.id}
+                  className="group p-4 rounded-[2px] bg-bg-tertiary border border-border hover:border-accent-primary/20 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <p className="text-sm font-medium text-text-primary">
+                          {s.name}
+                        </p>
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded-[2px] ${
+                            (s.schedule_type ?? "recurring") === "one_off"
+                              ? "text-accent-secondary/70 bg-accent-secondary/10"
+                              : "text-text-secondary/60 bg-bg-secondary"
+                          }`}
+                        >
+                          {formatScheduleBadge(s)}
+                        </span>
+                      </div>
+                      {/* Prompt */}
+                      <p className="text-[12px] text-text-secondary/50 mt-1">
+                        {s.prompt}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4 shrink-0">
+                      {/* Toggle / Completed badge */}
+                      {isOneOffCompleted(s) ? (
+                        <span className="text-[10px] text-text-secondary/40 px-1.5 py-0.5 border border-border rounded-[2px]">
+                          Completed
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggle(s.id)}
+                          className={`w-9 h-5 rounded-full relative transition-colors ${
+                            s.enabled
+                              ? "bg-accent-primary/30"
+                              : "bg-text-secondary/20"
+                          }`}
+                          title={s.enabled ? "Pause" : "Resume"}
+                        >
+                          <div
+                            className={`w-3.5 h-3.5 rounded-full absolute top-[3px] transition-all ${
+                              s.enabled
+                                ? "bg-accent-primary"
+                                : "bg-text-secondary/50"
+                            }`}
+                            style={{ left: s.enabled ? "18px" : "3px" }}
+                          />
+                        </button>
+                      )}
+                      {/* Edit button */}
+                      <button
+                        onClick={() => handleEdit(s)}
+                        className="w-6 h-6 flex items-center justify-center rounded-[2px] text-text-secondary/40 hover:text-accent-primary hover:bg-accent-primary/10 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Edit"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                      {/* Delete button */}
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="w-6 h-6 flex items-center justify-center rounded-[2px] text-text-secondary/40 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2">
+                    {s.agent_name && (
+                      <span className="text-[11px] text-accent-primary/70 font-medium">
+                        {s.agent_name}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-text-secondary/40">
+                      {s.run_count} run{s.run_count !== 1 ? "s" : ""}
                     </span>
-                  ) : (
-                    <button
-                      onClick={() => handleToggle(s.id)}
-                      className={`w-9 h-5 rounded-full relative transition-colors ${
-                        s.enabled
-                          ? "bg-accent-primary/30"
-                          : "bg-text-secondary/20"
-                      }`}
-                      title={s.enabled ? "Pause" : "Resume"}
-                    >
-                      <div
-                        className={`w-3.5 h-3.5 rounded-full absolute top-[3px] transition-all ${
-                          s.enabled
-                            ? "bg-accent-primary"
-                            : "bg-text-secondary/50"
-                        }`}
-                        style={{ left: s.enabled ? "18px" : "3px" }}
-                      />
-                    </button>
-                  )}
-                  {/* Edit button */}
-                  <button
-                    onClick={() => handleEdit(s)}
-                    className="w-6 h-6 flex items-center justify-center rounded-[2px] text-text-secondary/40 hover:text-accent-primary hover:bg-accent-primary/10 opacity-0 group-hover:opacity-100 transition-all"
-                    title="Edit"
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                  {/* Delete button */}
-                  <button
-                    onClick={() => handleDelete(s.id)}
-                    className="w-6 h-6 flex items-center justify-center rounded-[2px] text-text-secondary/40 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all"
-                    title="Delete"
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                    </svg>
-                  </button>
+                    {s.last_run && (
+                      <span className="text-[11px] text-text-secondary/30">
+                        Last: {new Date(s.last_run).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4 mt-2">
-                {s.agent_name && (
-                  <span className="text-[11px] text-accent-primary/70 font-medium">
-                    {s.agent_name}
-                  </span>
-                )}
-                <span className="text-[11px] text-text-secondary/40">
-                  {s.run_count} run{s.run_count !== 1 ? "s" : ""}
-                </span>
-                {s.last_run && (
-                  <span className="text-[11px] text-text-secondary/30">
-                    Last: {new Date(s.last_run).toLocaleDateString("en-GB", {
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>
