@@ -579,40 +579,8 @@ export function ChatContainer() {
   // Keep send ref updated
   sendRef.current = send;
 
-  // Fetch sessions + agents on mount
+  // Boot sequence: agents + WebSocket first (fast), then session history (slow)
   useEffect(() => {
-    async function fetchSessions() {
-      try {
-        const res = await fetch(`${API_URL}/api/sessions`);
-        const data = await res.json();
-        if (data.sessions) {
-          setSessions(
-            data.sessions.map(
-              (s: {
-                id: string;
-                title: string;
-                message_count: number;
-                last_message_preview: string;
-                total_cost: number;
-                created_at: string;
-                updated_at: string;
-              }) => ({
-                id: s.id,
-                title: s.title,
-                messageCount: s.message_count || 0,
-                lastMessagePreview: s.last_message_preview || "",
-                totalCost: s.total_cost || 0,
-                createdAt: s.created_at,
-                updatedAt: s.updated_at,
-              })
-            )
-          );
-        }
-      } catch (err) {
-        console.error("Failed to fetch sessions:", err);
-      }
-    }
-
     async function fetchAgents() {
       try {
         const res = await fetch(`${API_URL}/api/agents`);
@@ -685,16 +653,50 @@ export function ChatContainer() {
       }
     }
 
-    fetchSessions();
-    fetchAgents();
-    fetchDebugSetting();
-  }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
+    async function fetchSessions() {
+      try {
+        const res = await fetch(`${API_URL}/api/sessions`);
+        const data = await res.json();
+        if (data.sessions) {
+          setSessions(
+            data.sessions.map(
+              (s: {
+                id: string;
+                title: string;
+                message_count: number;
+                last_message_preview: string;
+                total_cost: number;
+                created_at: string;
+                updated_at: string;
+              }) => ({
+                id: s.id,
+                title: s.title,
+                messageCount: s.message_count || 0,
+                lastMessagePreview: s.last_message_preview || "",
+                totalCost: s.total_cost || 0,
+                createdAt: s.created_at,
+                updatedAt: s.updated_at,
+              })
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch sessions:", err);
+      }
+    }
 
-  // Connect to WebSocket on mount (new session) — runs once
-  useEffect(() => {
-    connect();
+    async function boot() {
+      // Phase 1: Load team members + settings + connect WebSocket (parallel, fast)
+      await Promise.all([fetchAgents(), fetchDebugSetting()]);
+      connect();
+
+      // Phase 2: Load session history in the background (slow, non-blocking)
+      fetchSessions();
+    }
+
+    boot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
 
   // Listen for session-switch events from Sidebar
   useEffect(() => {
