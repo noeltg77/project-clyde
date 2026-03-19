@@ -39,6 +39,7 @@ function cleanTitle(title: string): string {
 
 export function Sidebar() {
   const isConnected = useChatStore((s) => s.isConnected);
+  const isInitialLoad = useChatStore((s) => s.isInitialLoad);
   const sessionId = useChatStore((s) => s.sessionId);
   const sessions = useChatStore((s) => s.sessions);
   const removeSession = useChatStore((s) => s.removeSession);
@@ -247,15 +248,26 @@ export function Sidebar() {
               <div className="relative">
                 <div
                   className={`w-1.5 h-1.5 rounded-full ${
-                    isConnected ? "bg-accent-tertiary" : "bg-error"
+                    isConnected
+                      ? "bg-accent-tertiary"
+                      : isInitialLoad
+                        ? "bg-yellow-500"
+                        : "bg-error"
                   }`}
                 />
-                {!isConnected && (
+                {!isConnected && !isInitialLoad && (
                   <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-error animate-ping" />
+                )}
+                {isInitialLoad && !isConnected && (
+                  <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
                 )}
               </div>
               <span className="text-[10px] text-text-secondary">
-                {isConnected ? "Connected" : "Disconnected"}
+                {isConnected
+                  ? "Connected"
+                  : isInitialLoad
+                    ? "Connecting\u2026"
+                    : "Disconnected"}
               </span>
             </div>
             <button

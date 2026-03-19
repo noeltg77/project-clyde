@@ -95,7 +95,10 @@ async def search_messages(
 
 
 async def get_sessions(limit: int = 50) -> list[dict]:
-    """List all sessions with message count, last message preview, and total cost."""
+    """List all sessions with message count, last message preview, and total cost.
+
+    Uses batch queries instead of per-session lookups to avoid N+1 performance issues.
+    """
     client = get_supabase()
     # Fetch sessions ordered by most recently updated
     sessions_result = (
@@ -106,40 +109,38 @@ async def get_sessions(limit: int = 50) -> list[dict]:
         .execute()
     )
     sessions = sessions_result.data
+    if not sessions:
+        return []
 
-    # Enrich each session with message stats
+    session_ids = [s["id"] for s in sessions]
+
+    # Batch fetch all messages for these sessions (only the fields we need)
+    all_messages = (
+        client.table("chat_messages")
+        .select("session_id, content, cost_usd, created_at")
+        .in_("session_id", session_ids)
+        .order("created_at", desc=True)
+        .execute()
+    ).data
+
+    # Build per-session stats in a single pass
+    msg_counts: dict[str, int] = defaultdict(int)
+    total_costs: dict[str, float] = defaultdict(float)
+    last_previews: dict[str, str] = {}
+
+    for msg in all_messages:
+        sid = msg["session_id"]
+        msg_counts[sid] += 1
+        total_costs[sid] += msg.get("cost_usd") or 0
+        if sid not in last_previews:
+            # First message per session is the latest (ordered desc)
+            last_previews[sid] = (msg.get("content") or "")[:80]
+
     for session in sessions:
         sid = session["id"]
-        # Get message count and total cost
-        msgs = (
-            client.table("chat_messages")
-            .select("content, role, cost_usd, created_at")
-            .eq("session_id", sid)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        count_result = (
-            client.table("chat_messages")
-            .select("id", count="exact")
-            .eq("session_id", sid)
-            .execute()
-        )
-        cost_result = (
-            client.table("chat_messages")
-            .select("cost_usd")
-            .eq("session_id", sid)
-            .execute()
-        )
-        session["message_count"] = count_result.count or 0
-        session["total_cost"] = sum(
-            (m.get("cost_usd") or 0) for m in cost_result.data
-        )
-        if msgs.data:
-            last = msgs.data[0]
-            session["last_message_preview"] = (last.get("content") or "")[:80]
-        else:
-            session["last_message_preview"] = ""
+        session["message_count"] = msg_counts.get(sid, 0)
+        session["total_cost"] = total_costs.get(sid, 0)
+        session["last_message_preview"] = last_previews.get(sid, "")
 
     return sessions
 

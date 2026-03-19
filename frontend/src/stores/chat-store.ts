@@ -38,6 +38,7 @@ export type ChatState = {
   messages: Message[];
   sessions: SessionSummary[];
   isConnected: boolean;
+  isInitialLoad: boolean;
   isStreaming: boolean;
   isLoadingSession: boolean;
   error: string | null;
@@ -50,6 +51,7 @@ export type ChatActions = {
   appendToMessage: (id: string, textDelta: string) => void;
   addStepToMessage: (id: string, step: MessageStep) => void;
   setConnected: (connected: boolean) => void;
+  setInitialLoadDone: () => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
   clearMessages: () => void;
@@ -69,6 +71,7 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
     messages: [],
     sessions: [],
     isConnected: false,
+    isInitialLoad: true,
     isStreaming: false,
     isLoadingSession: false,
     error: null,
@@ -97,6 +100,7 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
         ),
       })),
     setConnected: (connected) => set({ isConnected: connected }),
+    setInitialLoadDone: () => set({ isInitialLoad: false }),
     setStreaming: (streaming) => set({ isStreaming: streaming }),
     setError: (error) => set({ error }),
     clearMessages: () => set({ messages: [] }),

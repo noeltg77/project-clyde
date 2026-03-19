@@ -27,6 +27,7 @@ export function ChatContainer() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const addStepToMessage = useChatStore((s) => s.addStepToMessage);
   const setConnected = useChatStore((s) => s.setConnected);
+  const setInitialLoadDone = useChatStore((s) => s.setInitialLoadDone);
   const setStreaming = useChatStore((s) => s.setStreaming);
   const setError = useChatStore((s) => s.setError);
   const clearMessages = useChatStore((s) => s.clearMessages);
@@ -561,8 +562,9 @@ export function ChatContainer() {
 
   const handleConnect = useCallback(() => {
     setConnected(true);
+    setInitialLoadDone();
     setError(null);
-  }, [setConnected, setError]);
+  }, [setConnected, setInitialLoadDone, setError]);
 
   const handleDisconnect = useCallback(() => {
     setConnected(false);
