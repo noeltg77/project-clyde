@@ -2948,6 +2948,10 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         )
 
         # Save cost record to Supabase for cost tracking
+        _gemini_logger.info(
+            f"[GEMINI] Cost tracking: session_id={_session_id!r}, "
+            f"cost=${result['cost_usd']:.6f}"
+        )
         if _session_id:
             try:
                 await save_message(
@@ -2965,8 +2969,11 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
                         "output_tokens": result["output_tokens"],
                     },
                 )
+                _gemini_logger.info("[GEMINI] Cost record saved successfully")
             except Exception as e:
-                _gemini_logger.warning(f"[GEMINI] Failed to save cost record: {e}")
+                _gemini_logger.error(f"[GEMINI] Failed to save cost record: {e}", exc_info=True)
+        else:
+            _gemini_logger.warning("[GEMINI] No session_id — cost record NOT saved")
 
         # Return response to Clyde
         return _text_response(
