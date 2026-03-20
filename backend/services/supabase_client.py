@@ -350,7 +350,7 @@ async def get_cost_summary() -> dict:
     # Fetch all messages from the last 30 days with cost data
     result = (
         client.table("chat_messages")
-        .select("cost_usd, agent_name, created_at")
+        .select("cost_usd, agent_name, created_at, metadata")
         .gte("created_at", thirty_days_ago.isoformat())
         .execute()
     )
@@ -364,6 +364,9 @@ async def get_cost_summary() -> dict:
         lambda: {"cost_usd": 0.0, "message_count": 0}
     )
     daily_costs: dict[str, float] = defaultdict(float)
+    platform_costs: dict[str, dict] = defaultdict(
+        lambda: {"cost_usd": 0.0, "message_count": 0}
+    )
 
     for msg in messages:
         cost = msg.get("cost_usd") or 0.0
@@ -372,6 +375,8 @@ async def get_cost_summary() -> dict:
 
         created_at = msg.get("created_at", "")
         agent = msg.get("agent_name") or "Unknown"
+        metadata = msg.get("metadata") or {}
+        platform = metadata.get("platform", "claude")
 
         try:
             msg_time = datetime.fromisoformat(
@@ -395,6 +400,10 @@ async def get_cost_summary() -> dict:
         agent_costs[agent]["cost_usd"] += cost
         agent_costs[agent]["message_count"] += 1
 
+        # Per-platform
+        platform_costs[platform]["cost_usd"] += cost
+        platform_costs[platform]["message_count"] += 1
+
     # Build response
     by_agent = [
         {
@@ -404,6 +413,17 @@ async def get_cost_summary() -> dict:
         }
         for name, data in sorted(
             agent_costs.items(), key=lambda x: x[1]["cost_usd"], reverse=True
+        )
+    ]
+
+    by_platform = [
+        {
+            "platform": name,
+            "cost_usd": round(data["cost_usd"], 4),
+            "message_count": data["message_count"],
+        }
+        for name, data in sorted(
+            platform_costs.items(), key=lambda x: x[1]["cost_usd"], reverse=True
         )
     ]
 
@@ -423,6 +443,7 @@ async def get_cost_summary() -> dict:
         "week_usd": round(week_usd, 4),
         "month_usd": round(month_usd, 4),
         "by_agent": by_agent,
+        "by_platform": by_platform,
         "daily_breakdown": daily_breakdown,
     }
 

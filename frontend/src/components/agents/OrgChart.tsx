@@ -17,6 +17,9 @@ const connectorColor: Record<string, string> = {
   opus: "#C8FF00",
   sonnet: "#00D4AA",
   haiku: "#A0A090",
+  "gemini-pro": "#4285F4",
+  "gemini-flash": "#FBBC04",
+  "gemini-lite": "#34A853",
 };
 
 /* ─── SVG connector lines between nodes ─── */
@@ -143,13 +146,17 @@ function AgentNode({
   team?: Team | null;
   teamBorderColor?: string;
 }) {
+  const modelBorderMap: Record<string, string> = {
+    opus: "border-agent-opus",
+    sonnet: "border-agent-sonnet",
+    haiku: "border-agent-haiku",
+    "gemini-pro": "border-[#4285F4]",
+    "gemini-flash": "border-[#FBBC04]",
+    "gemini-lite": "border-[#34A853]",
+  };
   const borderColor = isOrchestrator
     ? "border-agent-opus"
-    : agent.model === "sonnet"
-    ? "border-agent-sonnet"
-    : agent.model === "haiku"
-    ? "border-agent-haiku"
-    : "border-agent-opus";
+    : modelBorderMap[agent.model] || "border-agent-opus";
 
   const statusDotColor =
     agent.status === "active"
@@ -574,6 +581,7 @@ export function OrgChart() {
               id: string;
               name: string;
               role: string;
+              platform?: string;
               model: string;
               avatar?: string;
               status: string;
@@ -584,6 +592,7 @@ export function OrgChart() {
               registryId: a.id,
               name: a.name,
               role: a.role,
+              platform: (a.platform || "claude") as Agent["platform"],
               model: a.model as Agent["model"],
               avatar: a.avatar || "",
               status: a.status as Agent["status"],
@@ -700,6 +709,7 @@ export function OrgChart() {
     registryId: "clyde-001",
     name: "Clyde",
     role: "CEO",
+    platform: "claude",
     model: "opus",
     avatar: "/avatars/clyde.jpeg",
     status: "active",

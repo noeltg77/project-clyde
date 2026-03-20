@@ -38,7 +38,7 @@ from claude_agent_sdk.types import (
 from services.registry import load_registry
 from services.settings import load_settings, MODEL_ID_MAP
 from services.supabase_client import save_activity_event
-from agents.tools import registry_mcp_server, init_tools
+from agents.tools import registry_mcp_server, init_tools, update_session_context
 
 # All MCP tool names that Clyde should auto-allow (no permission popup needed)
 _AUTO_ALLOW_TOOLS = {
@@ -67,6 +67,8 @@ _AUTO_ALLOW_TOOLS = {
     # Phase 10: Workflows
     "create_workflow", "list_workflows", "read_workflow",
     "update_workflow", "delete_workflow", "assign_workflow",
+    # Phase 11: Gemini Subagent
+    "gemini_task",
 }
 
 
@@ -339,6 +341,11 @@ class ClydeChatManager:
         agents: dict[str, AgentDefinition] = {}
         for agent in registry.get("agents", []):
             if agent.get("status") == "active":
+                # Skip Gemini agents — they're invoked via gemini_task tool,
+                # not the Claude Agent SDK's Task delegation.
+                if agent.get("platform", "claude") == "gemini":
+                    continue
+
                 prompt = self._load_agent_prompt(agent.get("system_prompt_path", ""))
 
                 # Inject accumulated memory (Phase 3C)

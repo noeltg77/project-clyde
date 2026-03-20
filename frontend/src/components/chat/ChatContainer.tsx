@@ -3,6 +3,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
+import type { Agent } from "@/stores/agent-store";
 import { useInsightStore } from "@/stores/insight-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { useTaskStore } from "@/stores/task-store-provider";
@@ -482,7 +483,8 @@ export function ChatContainer() {
               registryId: orch.id,
               name: orch.name || "Clyde",
               role: orch.role || "CEO",
-              model: (orch.model as "opus" | "sonnet" | "haiku") || "opus",
+              platform: "claude",
+              model: (orch.model as Agent["model"]) || "opus",
               avatar: orch.avatar || "",
               status: (orch.status as "active" | "paused" | "archived") || "active",
               tools: [],
@@ -633,6 +635,7 @@ export function ChatContainer() {
               id: string;
               name: string;
               role: string;
+              platform?: string;
               model: string;
               avatar?: string;
               status: string;
@@ -643,6 +646,7 @@ export function ChatContainer() {
               registryId: a.id,
               name: a.name,
               role: a.role,
+              platform: (a.platform || "claude") as Agent["platform"],
               model: a.model || "sonnet",
               avatar: a.avatar || "",
               status: a.status || "active",
@@ -660,6 +664,7 @@ export function ChatContainer() {
               registryId: orch.id,
               name: orch.name || "Clyde",
               role: orch.role || "CEO",
+              platform: "claude",
               model: orch.model || "opus",
               avatar: orch.avatar || "",
               status: orch.status || "active",

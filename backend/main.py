@@ -23,6 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from agents.clyde import ClydeChatManager
+from agents.tools import update_session_context
 from services.supabase_client import (
     create_session,
     save_message,
@@ -1943,6 +1944,7 @@ async def chat_websocket(ws: WebSocket):
         stored_sdk_session_id: str | None = None
         if resume_session_id:
             session_id = resume_session_id
+            update_session_context(session_id)
             logger.info(f"[WS] Resuming session: {session_id}")
             prior_messages = await get_session_messages(session_id)
             is_first_user_message = len(prior_messages) == 0
@@ -2160,6 +2162,7 @@ async def chat_websocket(ws: WebSocket):
                 if session_id is None:
                     session = await create_session("New Chat")
                     session_id = session["id"]
+                    update_session_context(session_id)
                     is_first_user_message = True
                     logger.info(f"[WS] Created session on first message: {session_id}")
                     # Notify frontend of the real session_id + add to sidebar

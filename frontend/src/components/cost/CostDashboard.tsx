@@ -23,6 +23,11 @@ type CostData = {
     cost_usd: number;
     message_count: number;
   }[];
+  by_platform?: {
+    platform: string;
+    cost_usd: number;
+    message_count: number;
+  }[];
   daily_breakdown: {
     date: string;
     cost_usd: number;
@@ -109,6 +114,42 @@ export function CostDashboard() {
             <CostCard label="This Week" value={data.week_usd} />
             <CostCard label="This Month" value={data.month_usd} />
           </div>
+
+          {/* Platform breakdown */}
+          {data.by_platform && data.by_platform.length > 0 && (
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
+                By Platform
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {data.by_platform.map((p) => (
+                  <div
+                    key={p.platform}
+                    className="bg-bg-tertiary p-4 rounded-[2px] border border-border"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            p.platform === "gemini" ? "#4285F4" : "#C8FF00",
+                        }}
+                      />
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50">
+                        {p.platform}
+                      </p>
+                    </div>
+                    <p className="text-xl font-mono font-bold text-accent-primary">
+                      ${p.cost_usd.toFixed(4)}
+                    </p>
+                    <p className="text-[10px] text-text-secondary/40 mt-0.5">
+                      {p.message_count} message{p.message_count !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Daily chart */}
           <div className="bg-bg-tertiary p-5 rounded-[2px] border border-border">

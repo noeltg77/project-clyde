@@ -36,17 +36,25 @@ from services.registry import (
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
-from services.settings import load_settings
-from services.supabase_client import search_messages
+from services.settings import load_settings, GEMINI_MODEL_ID_MAP
+from services.supabase_client import search_messages, save_message
+from services.gemini_client import call_gemini
 
-# Module-level working_dir — set by init_tools() before server is used
+# Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
+_session_id: str = ""
 
 
 def init_tools(working_dir: str) -> None:
     """Set the working directory for all tool functions."""
     global _working_dir
     _working_dir = working_dir
+
+
+def update_session_context(session_id: str) -> None:
+    """Update the current chat session ID (called from main.py on session start)."""
+    global _session_id
+    _session_id = session_id
 
 
 def _safe_path(relative_or_virtual: str) -> str:
@@ -89,7 +97,9 @@ def _error_response(text: str) -> dict[str, Any]:
     "create_agent",
     "Create a new subagent in the registry. Writes the system prompt to file, "
     "initialises memory, creates a working directory, selects an avatar, and "
-    "registers the agent. Returns the new agent's details.",
+    "registers the agent. Returns the new agent's details. "
+    "Set platform to 'gemini' for a tool-free Gemini subagent (use gemini-pro, "
+    "gemini-flash, or gemini-lite as the model).",
     {
         "name": str,
         "role": str,
@@ -97,6 +107,7 @@ def _error_response(text: str) -> dict[str, Any]:
         "gender": str,
         "system_prompt": str,
         "tools": str,
+        "platform": str,
     },
 )
 async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -104,9 +115,10 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
     try:
         name = args.get("name", "").strip()
         role = args.get("role", "").strip()
+        platform = args.get("platform", "claude").strip().lower()
         settings = load_settings(_working_dir)
         default_model = settings.get("subagent_default_model", "sonnet")
-        model = args.get("model", default_model).strip().lower()
+        model = args.get("model", default_model if platform == "claude" else "gemini-flash").strip().lower()
         gender = args.get("gender", "male").strip().lower()
         system_prompt = args.get("system_prompt", "").strip()
         tools_str = args.get("tools", "")
@@ -117,18 +129,26 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("Agent role is required.")
         if not system_prompt:
             return _error_response("System prompt is required.")
-        if model not in ("sonnet", "haiku", "opus"):
-            return _error_response(f"Invalid model '{model}'. Must be sonnet, haiku, or opus.")
+        if platform not in ("claude", "gemini"):
+            return _error_response(f"Invalid platform '{platform}'. Must be claude or gemini.")
+        if platform == "claude" and model not in ("sonnet", "haiku", "opus"):
+            return _error_response(f"Invalid Claude model '{model}'. Must be sonnet, haiku, or opus.")
+        if platform == "gemini" and model not in ("gemini-pro", "gemini-flash", "gemini-lite"):
+            return _error_response(f"Invalid Gemini model '{model}'. Must be gemini-pro, gemini-flash, or gemini-lite.")
         if gender not in ("male", "female"):
             return _error_response(f"Invalid gender '{gender}'. Must be male or female.")
 
-        # Parse tools — accept comma-separated string or JSON array
-        tools_list = None
-        if tools_str:
-            try:
-                tools_list = json.loads(tools_str)
-            except json.JSONDecodeError:
-                tools_list = [t.strip() for t in tools_str.split(",") if t.strip()]
+        # Gemini agents are tool-free — force empty tools
+        if platform == "gemini":
+            tools_list = []
+        else:
+            # Parse tools — accept comma-separated string or JSON array
+            tools_list = None
+            if tools_str:
+                try:
+                    tools_list = json.loads(tools_str)
+                except json.JSONDecodeError:
+                    tools_list = [t.strip() for t in tools_str.split(",") if t.strip()]
 
         agent_entry = create_agent(
             working_dir=_working_dir,
@@ -140,17 +160,23 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             gender=gender,
         )
 
+        # Store platform in the agent entry
+        if platform != "claude":
+            agent_entry["platform"] = platform
+            update_agent(_working_dir, agent_entry["id"], {"platform": platform})
+
         return _text_response(
             f"Successfully created agent:\n"
             f"  Name: {agent_entry['name']}\n"
             f"  ID: {agent_entry['id']}\n"
             f"  Role: {agent_entry['role']}\n"
+            f"  Platform: {platform}\n"
             f"  Model: {agent_entry['model']}\n"
             f"  Avatar: {agent_entry.get('avatar', 'none')}\n"
             f"  Prompt: {agent_entry['system_prompt_path']}\n"
             f"  Memory: {agent_entry.get('memory_path', '')}\n"
             f"  Working dir: {agent_entry.get('working_dir', '')}\n"
-            f"  Tools: {', '.join(agent_entry.get('tools', []))}"
+            f"  Tools: {', '.join(agent_entry.get('tools', [])) if platform == 'claude' else '(none — Gemini agents are tool-free)'}"
         )
 
     except ValueError as e:
@@ -2838,6 +2864,123 @@ async def assign_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Failed to assign workflow: {str(e)}")
 
 
+# ─── Gemini Subagent Tool (Phase 11) ────────────────────────────────
+
+
+import logging as _logging
+
+_gemini_logger = _logging.getLogger(__name__)
+
+
+@tool(
+    "gemini_task",
+    "Delegate a task to a Gemini-powered subagent. The subagent runs prompt-in/text-out "
+    "with no tool access. Use this tool when the target agent's platform is 'gemini'. "
+    "After receiving the response, you (Clyde) should handle any file operations "
+    "(Write, Edit, etc.) with the returned content.",
+    {
+        "agent_name": str,
+        "task": str,
+    },
+)
+async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delegate a task to a Gemini subagent and return the response."""
+    try:
+        agent_name = args.get("agent_name", "").strip()
+        task = args.get("task", "").strip()
+
+        if not agent_name:
+            return _error_response("agent_name is required.")
+        if not task:
+            return _error_response("task is required.")
+
+        # Look up agent in registry
+        agent = get_agent_by_name(_working_dir, agent_name)
+        if not agent:
+            return _error_response(f"Agent '{agent_name}' not found in registry.")
+
+        # Validate this is a Gemini agent
+        platform = agent.get("platform", "claude")
+        if platform != "gemini":
+            return _error_response(
+                f"Agent '{agent_name}' is a {platform} agent, not Gemini. "
+                f"Use the Task tool for Claude agents."
+            )
+
+        # Resolve model ID
+        model_tier = agent.get("model", "gemini-flash")
+        model_id = GEMINI_MODEL_ID_MAP.get(model_tier)
+        if not model_id:
+            return _error_response(
+                f"Unknown Gemini model tier '{model_tier}'. "
+                f"Valid tiers: {', '.join(GEMINI_MODEL_ID_MAP.keys())}"
+            )
+
+        # Load system prompt
+        prompt_path = agent.get("system_prompt_path", "")
+        system_prompt = ""
+        if prompt_path:
+            abs_path = os.path.join(_working_dir, prompt_path.lstrip("/"))
+            if os.path.exists(abs_path):
+                with open(abs_path, "r") as f:
+                    system_prompt = f.read()
+
+        # Append agent memory if available
+        memory_path = agent.get("memory_path", "")
+        if memory_path:
+            abs_mem = os.path.join(_working_dir, memory_path.lstrip("/"))
+            if os.path.exists(abs_mem):
+                with open(abs_mem, "r") as f:
+                    memory_content = f.read().strip()
+                if memory_content:
+                    system_prompt += (
+                        "\n\n## Your Memory (Accumulated Knowledge)\n\n"
+                        "The following is your accumulated knowledge from previous tasks. "
+                        "Use this context to inform your current work.\n\n"
+                        f"{memory_content}"
+                    )
+
+        # Call Gemini API
+        result = await call_gemini(
+            model=model_id,
+            system_prompt=system_prompt,
+            user_prompt=task,
+        )
+
+        # Save cost record to Supabase for cost tracking
+        if _session_id:
+            try:
+                await save_message(
+                    session_id=_session_id,
+                    role="assistant",
+                    content=result["content"][:500],
+                    agent_name=agent.get("name", agent_name),
+                    token_count=result["input_tokens"] + result["output_tokens"],
+                    cost_usd=result["cost_usd"],
+                    metadata={
+                        "platform": "gemini",
+                        "model": result["model"],
+                        "model_tier": model_tier,
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                    },
+                )
+            except Exception as e:
+                _gemini_logger.warning(f"[GEMINI] Failed to save cost record: {e}")
+
+        # Return response to Clyde
+        return _text_response(
+            f"**{agent.get('name', agent_name)}** ({model_tier}) responded:\n\n"
+            f"{result['content']}\n\n"
+            f"---\n"
+            f"Tokens: {result['input_tokens']} in / {result['output_tokens']} out | "
+            f"Cost: ${result['cost_usd']:.6f}"
+        )
+
+    except Exception as e:
+        return _error_response(f"Gemini task failed: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -2911,5 +3054,7 @@ registry_mcp_server = create_sdk_mcp_server(
         update_workflow_tool,
         delete_workflow_tool,
         assign_workflow_tool,
+        # Phase 11: Gemini Subagent
+        gemini_task_tool,
     ],
 )
