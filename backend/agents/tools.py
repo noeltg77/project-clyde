@@ -2956,7 +2956,7 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
             try:
                 await save_message(
                     session_id=_session_id,
-                    role="assistant",
+                    role="agent",
                     content=result["content"][:500],
                     agent_name=agent.get("name", agent_name),
                     token_count=result["input_tokens"] + result["output_tokens"],
