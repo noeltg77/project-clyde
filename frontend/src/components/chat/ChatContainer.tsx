@@ -71,6 +71,8 @@ export function ChatContainer() {
   const lastAgentMsgId = useRef<string | null>(null);
   // Persists after result is processed so debug_prompts can still attach to it
   const lastFinishedMsgId = useRef<string | null>(null);
+  // Track inline activity message IDs per agent (for updating working→complete)
+  const activityMsgIds = useRef<Record<string, { msgId: string; startTime: number }>>({});
 
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
@@ -373,8 +375,48 @@ export function ChatContainer() {
               avatar: regAvatar,
               role: (msg.data.role as string) || (isTeamMember ? "Team member" : "Subagent"),
             });
+
+            // Add inline activity message to chat
+            const actMsgId = `activity-${regRegistryId}-${Date.now()}`;
+            activityMsgIds.current[regRegistryId] = { msgId: actMsgId, startTime: Date.now() };
+            const taskDesc = (msg.data.task_description as string) || (msg.data.role as string) || "Working...";
+            addMessage({
+              id: actMsgId,
+              sessionId: "",
+              role: "agent",
+              agentName: regName,
+              agentAvatar: regAvatar,
+              content: taskDesc,
+              createdAt: new Date().toISOString(),
+              metadata: {
+                model_tier: regModel || "sonnet",
+                agent_role: (msg.data.role as string) || (isTeamMember ? "Team member" : "Subagent"),
+              },
+              activityStatus: {
+                phase: "working",
+                agentId: regRegistryId,
+              },
+            });
           } else if (eventType === "stopped") {
             setAgentActive(regRegistryId, false);
+
+            // Update inline activity message to complete
+            const tracked = activityMsgIds.current[regRegistryId];
+            if (tracked) {
+              const durationMs = Date.now() - tracked.startTime;
+              const tokenCount = (msg.data.token_count as number) || undefined;
+              const completionText = (msg.data.completion_text as string) || (msg.data.task_description as string) || "Task completed";
+              updateMessage(tracked.msgId, {
+                content: completionText,
+                activityStatus: {
+                  phase: "complete",
+                  agentId: regRegistryId,
+                  tokenCount,
+                  durationMs,
+                },
+              });
+              delete activityMsgIds.current[regRegistryId];
+            }
           }
           break;
         }

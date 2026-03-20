@@ -7,6 +7,13 @@ export type MessageStep = {
   timestamp: string;
 };
 
+export type AgentActivityStatus = {
+  phase: "working" | "complete";
+  agentId: string;
+  tokenCount?: number;
+  durationMs?: number;
+};
+
 export type Message = {
   id: string;
   sessionId: string;
@@ -21,6 +28,7 @@ export type Message = {
   isStreaming?: boolean;
   steps?: MessageStep[];
   debugPrompts?: { systemPrompt: string; userMessage: string };
+  activityStatus?: AgentActivityStatus;
 };
 
 export type SessionSummary = {
