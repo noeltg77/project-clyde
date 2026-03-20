@@ -1227,6 +1227,7 @@ async def update_registry_settings(body: dict):
 # Only these vars can be read/written via the API
 _ENV_WHITELIST = {
     "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
     "OPENAI_API_KEY",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
