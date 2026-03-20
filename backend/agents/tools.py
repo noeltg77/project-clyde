@@ -37,12 +37,13 @@ from services.registry import (
 )
 from services.embeddings import generate_query_embedding
 from services.settings import load_settings, GEMINI_MODEL_ID_MAP
-from services.supabase_client import search_messages, save_message
+from services.supabase_client import search_messages, save_message, save_activity_event
 from services.gemini_client import call_gemini
 
 # Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
 _session_id: str = ""
+_ws: Any = None  # WebSocket for pushing activity events to the frontend
 
 
 def init_tools(working_dir: str) -> None:
@@ -51,10 +52,12 @@ def init_tools(working_dir: str) -> None:
     _working_dir = working_dir
 
 
-def update_session_context(session_id: str) -> None:
-    """Update the current chat session ID (called from main.py on session start)."""
-    global _session_id
+def update_session_context(session_id: str, ws: Any = None) -> None:
+    """Update the current chat session ID and WebSocket reference."""
+    global _session_id, _ws
     _session_id = session_id
+    if ws is not None:
+        _ws = ws
 
 
 def _safe_path(relative_or_virtual: str) -> str:
@@ -2940,12 +2943,83 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
                         f"{memory_content}"
                     )
 
+        # Emit "started" activity event to frontend
+        agent_display_name = agent.get("name", agent_name)
+        agent_registry_id = agent.get("id", "")
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "started",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "role": agent.get("role", "Gemini Subagent"),
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist started event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="started",
+                    description="Gemini agent started",
+                    metadata={"platform": "gemini", "model": model_tier},
+                )
+            except Exception:
+                pass
+
         # Call Gemini API
         result = await call_gemini(
             model=model_id,
             system_prompt=system_prompt,
             user_prompt=task,
         )
+
+        # Emit "stopped" activity event to frontend
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "stopped",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist stopped event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="stopped",
+                    description="Gemini agent stopped",
+                    metadata={"platform": "gemini", "model": model_tier},
+                )
+            except Exception:
+                pass
 
         # Save cost record to Supabase for cost tracking
         _gemini_logger.info(
