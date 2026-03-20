@@ -57,7 +57,7 @@ export const AgentActivityBubble = memo(function AgentActivityBubble({
         {/* Completion checkmark overlay */}
         {isComplete && (
           <motion.div
-            className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-green-500 flex items-center justify-center border-2 border-bg-primary"
+            className="absolute -bottom-0.5 -right-0.5 z-10 w-[18px] h-[18px] rounded-full bg-green-500 flex items-center justify-center border-2 border-bg-primary"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ type: "spring", stiffness: 500, damping: 20 }}
