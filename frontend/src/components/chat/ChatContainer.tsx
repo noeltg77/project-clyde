@@ -140,7 +140,15 @@ export function ChatContainer() {
             created_at: string;
           }>;
           if (historyMessages && historyMessages.length > 0) {
-            const formatted: Message[] = historyMessages.map((m) => {
+            // Filter out cost-tracking-only records (gemini/openai).
+            // These are saved for cost tracking but were never visible
+            // in the live chat — activity callouts from activity_history
+            // are the visual representation instead.
+            const visibleMessages = historyMessages.filter((m) => {
+              if (m.role === "agent" && m.metadata?.platform) return false;
+              return true;
+            });
+            const formatted: Message[] = visibleMessages.map((m) => {
               // Extract persisted steps from metadata
               const meta = m.metadata || {};
               const steps = (meta.steps as MessageStep[] | undefined) || undefined;
