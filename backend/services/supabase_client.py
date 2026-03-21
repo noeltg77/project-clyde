@@ -43,6 +43,7 @@ async def save_message(
     token_count: int = 0,
     cost_usd: float = 0.0,
     metadata: dict | None = None,
+    created_at: str | None = None,
 ) -> dict:
     client = get_supabase()
     row: dict = {
@@ -57,6 +58,8 @@ async def save_message(
     }
     if embedding:
         row["embedding"] = embedding
+    if created_at:
+        row["created_at"] = created_at
     result = client.table("chat_messages").insert(row).execute()
     return result.data[0]
 

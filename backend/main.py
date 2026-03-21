@@ -2199,6 +2199,8 @@ async def chat_websocket(ws: WebSocket):
 
                 # Stream Clyde's response in a cancellable task
                 full_response = ""
+                # Track each text block separately for per-block persistence
+                response_blocks: list[dict] = []  # [{text, timestamp, steps_snapshot}]
                 result_data: dict = {}
                 was_cancelled = False
 
@@ -2224,10 +2226,20 @@ async def chat_websocket(ws: WebSocket):
                             chunk["type"] == "assistant_text"
                             and chunk["data"].get("final")
                         ):
+                            block_text = chunk["data"]["text"]
                             if full_response:
-                                full_response += "\n\n" + chunk["data"]["text"]
+                                full_response += "\n\n" + block_text
                             else:
-                                full_response = chunk["data"]["text"]
+                                full_response = block_text
+                            # Snapshot the steps accumulated so far for this block
+                            prev_count = response_blocks[-1]["steps_end"] if response_blocks else 0
+                            current_steps = list(manager._response_steps)
+                            response_blocks.append({
+                                "text": block_text,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "steps_start": prev_count,
+                                "steps_end": len(current_steps),
+                            })
 
                         if chunk["type"] == "result":
                             result_data = chunk["data"]
@@ -2343,26 +2355,54 @@ async def chat_websocket(ws: WebSocket):
                 async def _save_clyde_response():
                     if not full_response:
                         return
+
+                    _settings = load_settings(WORKING_DIR)
+                    clyde_model = _settings.get("clyde_model", "opus")
+                    all_steps = list(manager._response_steps)
+                    total_cost = result_data.get("total_cost_usd", 0)
+
+                    # Generate embedding on the full concatenated response (for search)
                     try:
                         clyde_embedding = await generate_embedding(full_response)
                     except Exception:
                         clyde_embedding = None
 
-                    # Include accumulated steps in metadata for persistence
-                    _settings = load_settings(WORKING_DIR)
-                    msg_metadata: dict = {"model": _settings.get("clyde_model", "opus")}
-                    if manager._response_steps:
-                        msg_metadata["steps"] = manager._response_steps
-
-                    await save_message(
-                        session_id=session_id,
-                        role="clyde",
-                        content=full_response,
-                        embedding=clyde_embedding,
-                        agent_name="Clyde",
-                        cost_usd=result_data.get("total_cost_usd", 0),
-                        metadata=msg_metadata,
-                    )
+                    if len(response_blocks) <= 1:
+                        # Single block — save as before (one message)
+                        msg_metadata: dict = {"model": clyde_model}
+                        if all_steps:
+                            msg_metadata["steps"] = all_steps
+                        await save_message(
+                            session_id=session_id,
+                            role="clyde",
+                            content=full_response,
+                            embedding=clyde_embedding,
+                            agent_name="Clyde",
+                            cost_usd=total_cost,
+                            metadata=msg_metadata,
+                        )
+                    else:
+                        # Multiple blocks — save each separately with its own
+                        # timestamp so they reload as individual message bubbles
+                        # with activity callouts correctly interleaved.
+                        for i, block in enumerate(response_blocks):
+                            is_last = (i == len(response_blocks) - 1)
+                            block_meta: dict = {"model": clyde_model}
+                            # Attach only the steps that belong to this block
+                            block_steps = all_steps[block["steps_start"]:block["steps_end"]]
+                            if block_steps:
+                                block_meta["steps"] = block_steps
+                            await save_message(
+                                session_id=session_id,
+                                role="clyde",
+                                content=block["text"],
+                                # Embed full response on last block for search
+                                embedding=clyde_embedding if is_last else None,
+                                agent_name="Clyde",
+                                cost_usd=total_cost if is_last else 0,
+                                metadata=block_meta,
+                                created_at=block["timestamp"],
+                            )
 
                 async def _log_performance():
                     if not (_performance_logger and result_data):
