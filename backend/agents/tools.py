@@ -3065,7 +3065,7 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 # ─── Phase 12: OpenAI Subagent ─────────────────────────────────────
 
-_openai_logger = logging.getLogger("services.openai_client")
+_openai_logger = _logging.getLogger("services.openai_client")
 
 
 @tool(
