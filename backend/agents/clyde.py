@@ -82,6 +82,9 @@ class ClydeChatManager:
         self.ws = ws
         self.client: ClaudeSDKClient | None = None
         self.session_id: str | None = None
+        # Supabase session ID — set by main.py, used for activity event persistence.
+        # Distinct from self.session_id which gets overwritten by the SDK's internal ID.
+        self.supabase_session_id: str | None = None
 
         # Permission handling state
         self.pending_permissions: dict[str, asyncio.Event] = {}
@@ -587,24 +590,26 @@ class ClydeChatManager:
                 pass
 
         # Persist to Supabase (include registry data for session resume)
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=registry_agent.get("id", agent_id),
-                agent_name=registry_agent.get("name", agent_label),
-                event_type="started",
-                description=description,
-                metadata={
-                    "parent_agent": parent_agent,
-                    "is_team_member": is_team_member,
-                    "model": registry_agent.get("model", "sonnet"),
-                    "avatar": registry_agent.get("avatar", ""),
-                    "role": registry_agent.get("role", "Subagent"),
-                    "platform": registry_agent.get("platform", "claude"),
-                },
-            )
-        except Exception:
-            pass
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="started",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_subagent_stop(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
@@ -657,24 +662,26 @@ class ClydeChatManager:
                 pass
 
         # Persist to Supabase (include registry data for session resume)
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=registry_agent.get("id", agent_id),
-                agent_name=registry_agent.get("name", agent_label),
-                event_type="stopped",
-                description=description,
-                metadata={
-                    "parent_agent": parent_agent,
-                    "is_team_member": is_team_member,
-                    "model": registry_agent.get("model", "sonnet"),
-                    "avatar": registry_agent.get("avatar", ""),
-                    "role": registry_agent.get("role", "Subagent"),
-                    "platform": registry_agent.get("platform", "claude"),
-                },
-            )
-        except Exception:
-            pass
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="stopped",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_notification(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:

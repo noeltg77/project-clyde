@@ -2197,6 +2197,9 @@ async def chat_websocket(ws: WebSocket):
                     _process_incoming_during_response()
                 )
 
+                # Ensure the manager knows the Supabase session ID for activity persistence
+                manager.supabase_session_id = session_id
+
                 # Stream Clyde's response in a cancellable task
                 full_response = ""
                 # Track each text block separately for per-block persistence
