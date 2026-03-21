@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
+import type { Agent } from "@/stores/agent-store";
 import { springs } from "@/lib/design-tokens";
 import { PromptEditor } from "./PromptEditor";
 import { PromptHistoryViewer } from "./PromptHistoryViewer";
@@ -121,6 +122,10 @@ const ENV_VAR_GROUPS = [
   {
     service: "Anthropic",
     vars: [{ key: "ANTHROPIC_API_KEY", label: "API Key" }],
+  },
+  {
+    service: "Google (Gemini)",
+    vars: [{ key: "GEMINI_API_KEY", label: "API Key" }],
   },
   {
     service: "OpenAI",
@@ -993,7 +998,7 @@ function ControlsTab() {
 
       // When clyde_model changes, update the orchestrator in the agent store
       if (key === "clyde_model" && orchestrator) {
-        setOrchestrator({ ...orchestrator, model: value as "opus" | "sonnet" | "haiku" });
+        setOrchestrator({ ...orchestrator, model: value as Agent["model"] });
       }
 
       // Sync debug setting to global store

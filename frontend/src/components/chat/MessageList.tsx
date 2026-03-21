@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { MessageBubble } from "./MessageBubble";
+import { AgentActivityBubble } from "./AgentActivityBubble";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
 
 /* ─── Thinking indicator — shown while waiting for Clyde's first chunk ─── */
@@ -126,9 +127,13 @@ export function MessageList() {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
-      ))}
+      {messages.map((msg) =>
+        msg.activityStatus ? (
+          <AgentActivityBubble key={msg.id} message={msg} />
+        ) : (
+          <MessageBubble key={msg.id} message={msg} />
+        )
+      )}
       {showThinking && <ThinkingIndicator />}
       <div ref={bottomRef} />
     </div>

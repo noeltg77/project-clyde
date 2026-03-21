@@ -1,10 +1,17 @@
 import { createStore } from "zustand/vanilla";
 
+export type AgentPlatform = "claude" | "gemini" | "openai";
+export type ClaudeModel = "opus" | "sonnet" | "haiku";
+export type GeminiModel = "gemini-pro" | "gemini-flash" | "gemini-lite";
+export type OpenAIModel = "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.4-nano";
+export type AgentModel = ClaudeModel | GeminiModel | OpenAIModel;
+
 export type Agent = {
   registryId: string;
   name: string;
   role: string;
-  model: "opus" | "sonnet" | "haiku";
+  platform: AgentPlatform;
+  model: AgentModel;
   avatar: string;
   status: "active" | "paused" | "archived";
   tools: string[];
@@ -16,6 +23,7 @@ export type Team = {
   id: string;
   name: string;
   color: string;
+  icon: string;
   created_at: string;
 };
 
@@ -41,7 +49,7 @@ export type PendingPermission = {
   toolName: string;
   toolInput: Record<string, string>;
   agentName: string;
-  modelTier: "opus" | "sonnet" | "haiku";
+  modelTier: AgentModel;
   timestamp: string;
 };
 

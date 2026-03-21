@@ -38,7 +38,7 @@ from claude_agent_sdk.types import (
 from services.registry import load_registry
 from services.settings import load_settings, MODEL_ID_MAP
 from services.supabase_client import save_activity_event
-from agents.tools import registry_mcp_server, init_tools
+from agents.tools import registry_mcp_server, init_tools, update_session_context
 
 # All MCP tool names that Clyde should auto-allow (no permission popup needed)
 _AUTO_ALLOW_TOOLS = {
@@ -67,6 +67,10 @@ _AUTO_ALLOW_TOOLS = {
     # Phase 10: Workflows
     "create_workflow", "list_workflows", "read_workflow",
     "update_workflow", "delete_workflow", "assign_workflow",
+    # Phase 11: Gemini Subagent
+    "gemini_task",
+    # Phase 12: OpenAI Subagent
+    "openai_task",
 }
 
 
@@ -78,6 +82,9 @@ class ClydeChatManager:
         self.ws = ws
         self.client: ClaudeSDKClient | None = None
         self.session_id: str | None = None
+        # Supabase session ID — set by main.py, used for activity event persistence.
+        # Distinct from self.session_id which gets overwritten by the SDK's internal ID.
+        self.supabase_session_id: str | None = None
 
         # Permission handling state
         self.pending_permissions: dict[str, asyncio.Event] = {}
@@ -339,6 +346,13 @@ class ClydeChatManager:
         agents: dict[str, AgentDefinition] = {}
         for agent in registry.get("agents", []):
             if agent.get("status") == "active":
+                # Skip non-Claude agents — they're invoked via their own
+                # tools (gemini_task, openai_task), not the Claude Agent
+                # SDK's Task delegation.
+                agent_platform = agent.get("platform", "claude")
+                if agent_platform in ("gemini", "openai"):
+                    continue
+
                 prompt = self._load_agent_prompt(agent.get("system_prompt_path", ""))
 
                 # Inject accumulated memory (Phase 3C)
@@ -575,18 +589,27 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
-                event_type="started",
-                description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
-            )
-        except Exception:
-            pass
+        # Persist to Supabase (include registry data for session resume)
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="started",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_subagent_stop(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
@@ -638,18 +661,27 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
-                event_type="stopped",
-                description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
-            )
-        except Exception:
-            pass
+        # Persist to Supabase (include registry data for session resume)
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="stopped",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_notification(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:

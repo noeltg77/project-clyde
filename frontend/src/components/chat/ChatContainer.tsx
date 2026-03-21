@@ -3,6 +3,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
+import type { Agent } from "@/stores/agent-store";
 import { useInsightStore } from "@/stores/insight-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { useTaskStore } from "@/stores/task-store-provider";
@@ -27,6 +28,7 @@ export function ChatContainer() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const addStepToMessage = useChatStore((s) => s.addStepToMessage);
   const setConnected = useChatStore((s) => s.setConnected);
+  const setInitialLoadDone = useChatStore((s) => s.setInitialLoadDone);
   const setStreaming = useChatStore((s) => s.setStreaming);
   const setError = useChatStore((s) => s.setError);
   const clearMessages = useChatStore((s) => s.clearMessages);
@@ -70,6 +72,10 @@ export function ChatContainer() {
   const lastAgentMsgId = useRef<string | null>(null);
   // Persists after result is processed so debug_prompts can still attach to it
   const lastFinishedMsgId = useRef<string | null>(null);
+  // Track inline activity message IDs per agent (for updating working→complete)
+  const activityMsgIds = useRef<Record<string, { msgId: string; startTime: number }>>({});
+  // Keep a ref to current messages so handlers within the same tick can read latest state
+  const messagesRef = useRef<Message[]>([]);
 
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
@@ -134,7 +140,15 @@ export function ChatContainer() {
             created_at: string;
           }>;
           if (historyMessages && historyMessages.length > 0) {
-            const formatted: Message[] = historyMessages.map((m) => {
+            // Filter out cost-tracking-only records (gemini/openai).
+            // These are saved for cost tracking but were never visible
+            // in the live chat — activity callouts from activity_history
+            // are the visual representation instead.
+            const visibleMessages = historyMessages.filter((m) => {
+              if (m.role === "agent" && m.metadata?.platform) return false;
+              return true;
+            });
+            const formatted: Message[] = visibleMessages.map((m) => {
               // Extract persisted steps from metadata
               const meta = m.metadata || {};
               const steps = (meta.steps as MessageStep[] | undefined) || undefined;
@@ -150,6 +164,7 @@ export function ChatContainer() {
                 steps,
               };
             });
+            messagesRef.current = formatted;
             setMessages(formatted);
           }
           setLoadingSession(false);
@@ -180,6 +195,54 @@ export function ChatContainer() {
             }));
             // Reverse so newest first (matches store convention)
             setActivityEvents(formatted.reverse());
+
+            // Reconstruct activity callout messages for the chat timeline
+            // Pair started → stopped events by agent_id to build completed callouts
+            const startedMap = new Map<string, typeof events[0]>();
+            const activityMessages: Message[] = [];
+
+            for (const evt of events) {
+              if (evt.event_type === "started") {
+                startedMap.set(evt.agent_id, evt);
+              } else if (evt.event_type === "stopped") {
+                const startEvt = startedMap.get(evt.agent_id);
+                const meta = evt.metadata || startEvt?.metadata || {};
+                const startTime = startEvt ? new Date(startEvt.created_at).getTime() : 0;
+                const stopTime = new Date(evt.created_at).getTime();
+                const durationMs = startEvt ? stopTime - startTime : undefined;
+
+                activityMessages.push({
+                  id: `activity-restored-${evt.id}`,
+                  sessionId: "",
+                  role: "agent",
+                  agentName: evt.agent_name,
+                  agentAvatar: (meta.avatar as string) || "",
+                  content: "Task complete!",
+                  createdAt: startEvt?.created_at || evt.created_at,
+                  metadata: {
+                    model_tier: (meta.model as string) || "sonnet",
+                    agent_role: (meta.role as string) || "Subagent",
+                  },
+                  activityStatus: {
+                    phase: "complete",
+                    agentId: evt.agent_id,
+                    durationMs,
+                  },
+                });
+
+                startedMap.delete(evt.agent_id);
+              }
+            }
+
+            // Merge activity messages into existing chat messages by timestamp
+            if (activityMessages.length > 0) {
+              const currentMessages = messagesRef.current;
+              const merged = [...currentMessages, ...activityMessages];
+              merged.sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              setMessages(merged);
+            }
           }
           break;
         }
@@ -372,8 +435,48 @@ export function ChatContainer() {
               avatar: regAvatar,
               role: (msg.data.role as string) || (isTeamMember ? "Team member" : "Subagent"),
             });
+
+            // Add inline activity message to chat
+            const actMsgId = `activity-${regRegistryId}-${Date.now()}`;
+            activityMsgIds.current[regRegistryId] = { msgId: actMsgId, startTime: Date.now() };
+            const taskDesc = (msg.data.task_description as string) || (msg.data.role as string) || "Working...";
+            addMessage({
+              id: actMsgId,
+              sessionId: "",
+              role: "agent",
+              agentName: regName,
+              agentAvatar: regAvatar,
+              content: taskDesc,
+              createdAt: new Date().toISOString(),
+              metadata: {
+                model_tier: regModel || "sonnet",
+                agent_role: (msg.data.role as string) || (isTeamMember ? "Team member" : "Subagent"),
+              },
+              activityStatus: {
+                phase: "working",
+                agentId: regRegistryId,
+              },
+            });
           } else if (eventType === "stopped") {
             setAgentActive(regRegistryId, false);
+
+            // Update inline activity message to complete
+            const tracked = activityMsgIds.current[regRegistryId];
+            if (tracked) {
+              const durationMs = Date.now() - tracked.startTime;
+              const tokenCount = (msg.data.token_count as number) || undefined;
+              const completionText = (msg.data.completion_text as string) || (msg.data.task_description as string) || "Task complete!";
+              updateMessage(tracked.msgId, {
+                content: completionText,
+                activityStatus: {
+                  phase: "complete",
+                  agentId: regRegistryId,
+                  tokenCount,
+                  durationMs,
+                },
+              });
+              delete activityMsgIds.current[regRegistryId];
+            }
           }
           break;
         }
@@ -384,7 +487,8 @@ export function ChatContainer() {
             id: string;
             name: string;
             role: string;
-            model: "opus" | "sonnet" | "haiku";
+            platform?: string;
+            model: string;
             avatar: string;
             status: "active" | "paused" | "archived";
             tools: string[];
@@ -397,7 +501,8 @@ export function ChatContainer() {
                 registryId: a.id,
                 name: a.name,
                 role: a.role,
-                model: a.model || "sonnet",
+                platform: (a.platform || "claude") as Agent["platform"],
+                model: (a.model || "sonnet") as Agent["model"],
                 avatar: a.avatar || "",
                 status: a.status || "active",
                 tools: a.tools || [],
@@ -412,6 +517,7 @@ export function ChatContainer() {
             id: string;
             name: string;
             color: string;
+            icon?: string;
             created_at?: string;
           }>;
           if (teams) {
@@ -420,6 +526,7 @@ export function ChatContainer() {
                 id: t.id,
                 name: t.name,
                 color: t.color,
+                icon: t.icon || "Users",
                 created_at: t.created_at || "",
               }))
             );
@@ -439,7 +546,8 @@ export function ChatContainer() {
               registryId: orch.id,
               name: orch.name || "Clyde",
               role: orch.role || "CEO",
-              model: (orch.model as "opus" | "sonnet" | "haiku") || "opus",
+              platform: "claude",
+              model: (orch.model as Agent["model"]) || "opus",
               avatar: orch.avatar || "",
               status: (orch.status as "active" | "paused" | "archived") || "active",
               tools: [],
@@ -561,8 +669,9 @@ export function ChatContainer() {
 
   const handleConnect = useCallback(() => {
     setConnected(true);
+    setInitialLoadDone();
     setError(null);
-  }, [setConnected, setError]);
+  }, [setConnected, setInitialLoadDone, setError]);
 
   const handleDisconnect = useCallback(() => {
     setConnected(false);
@@ -577,8 +686,84 @@ export function ChatContainer() {
   // Keep send ref updated
   sendRef.current = send;
 
-  // Fetch sessions + agents on mount
+  // Boot sequence: agents + WebSocket first (fast), then session history (slow)
   useEffect(() => {
+    async function fetchAgents() {
+      try {
+        const res = await fetch(`${API_URL}/api/agents`);
+        if (res.ok) {
+          const data = await res.json();
+          const agents = (data.agents || []).map(
+            (a: {
+              id: string;
+              name: string;
+              role: string;
+              platform?: string;
+              model: string;
+              avatar?: string;
+              status: string;
+              tools?: string[];
+              skills?: string[];
+              team?: string;
+            }) => ({
+              registryId: a.id,
+              name: a.name,
+              role: a.role,
+              platform: (a.platform || "claude") as Agent["platform"],
+              model: a.model || "sonnet",
+              avatar: a.avatar || "",
+              status: a.status || "active",
+              tools: a.tools || [],
+              skills: a.skills || [],
+              team: a.team || null,
+            })
+          );
+          setAgents(agents);
+
+          // Populate orchestrator (Clyde) in the store
+          const orch = data.orchestrator;
+          if (orch && orch.id) {
+            setOrchestrator({
+              registryId: orch.id,
+              name: orch.name || "Clyde",
+              role: orch.role || "CEO",
+              platform: "claude",
+              model: orch.model || "opus",
+              avatar: orch.avatar || "",
+              status: orch.status || "active",
+              tools: orch.tools || [],
+              skills: orch.skills || [],
+              team: null,
+            });
+          }
+
+          // Populate teams
+          const teamsData = (data.teams || []).map(
+            (t: { id: string; name: string; color: string; icon?: string; created_at?: string }) => ({
+              id: t.id,
+              name: t.name,
+              color: t.color,
+              icon: t.icon || "Users",
+              created_at: t.created_at || "",
+            })
+          );
+          setTeams(teamsData);
+        }
+      } catch (err) {
+        console.error("Failed to fetch agents:", err);
+      }
+    }
+
+    async function fetchDebugSetting() {
+      try {
+        const res = await fetch(`${API_URL}/api/registry/settings`);
+        const data = await res.json();
+        setDebugEnabled(!!data.debug_mode_enabled);
+      } catch {
+        // ignore
+      }
+    }
+
     async function fetchSessions() {
       try {
         const res = await fetch(`${API_URL}/api/sessions`);
@@ -611,88 +796,18 @@ export function ChatContainer() {
       }
     }
 
-    async function fetchAgents() {
-      try {
-        const res = await fetch(`${API_URL}/api/agents`);
-        if (res.ok) {
-          const data = await res.json();
-          const agents = (data.agents || []).map(
-            (a: {
-              id: string;
-              name: string;
-              role: string;
-              model: string;
-              avatar?: string;
-              status: string;
-              tools?: string[];
-              skills?: string[];
-              team?: string;
-            }) => ({
-              registryId: a.id,
-              name: a.name,
-              role: a.role,
-              model: a.model || "sonnet",
-              avatar: a.avatar || "",
-              status: a.status || "active",
-              tools: a.tools || [],
-              skills: a.skills || [],
-              team: a.team || null,
-            })
-          );
-          setAgents(agents);
+    async function boot() {
+      // Phase 1: Load team members + settings + connect WebSocket (parallel, fast)
+      await Promise.all([fetchAgents(), fetchDebugSetting()]);
+      connect();
 
-          // Populate orchestrator (Clyde) in the store
-          const orch = data.orchestrator;
-          if (orch && orch.id) {
-            setOrchestrator({
-              registryId: orch.id,
-              name: orch.name || "Clyde",
-              role: orch.role || "CEO",
-              model: orch.model || "opus",
-              avatar: orch.avatar || "",
-              status: orch.status || "active",
-              tools: orch.tools || [],
-              skills: orch.skills || [],
-              team: null,
-            });
-          }
-
-          // Populate teams
-          const teamsData = (data.teams || []).map(
-            (t: { id: string; name: string; color: string; created_at?: string }) => ({
-              id: t.id,
-              name: t.name,
-              color: t.color,
-              created_at: t.created_at || "",
-            })
-          );
-          setTeams(teamsData);
-        }
-      } catch (err) {
-        console.error("Failed to fetch agents:", err);
-      }
+      // Phase 2: Load session history in the background (slow, non-blocking)
+      fetchSessions();
     }
 
-    async function fetchDebugSetting() {
-      try {
-        const res = await fetch(`${API_URL}/api/registry/settings`);
-        const data = await res.json();
-        setDebugEnabled(!!data.debug_mode_enabled);
-      } catch {
-        // ignore
-      }
-    }
-
-    fetchSessions();
-    fetchAgents();
-    fetchDebugSetting();
-  }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
-
-  // Connect to WebSocket on mount (new session) — runs once
-  useEffect(() => {
-    connect();
+    boot();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
 
   // Listen for session-switch events from Sidebar
   useEffect(() => {

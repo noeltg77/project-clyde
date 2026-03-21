@@ -2,17 +2,25 @@
 
 import Image from "next/image";
 
+import type { AgentModel } from "@/stores/agent-store";
+
 type AgentAvatarProps = {
   src?: string;
   name: string;
   size?: number;
-  modelTier?: "opus" | "sonnet" | "haiku";
+  modelTier?: AgentModel;
 };
 
-const borderColors = {
+const borderColors: Record<AgentModel, string> = {
   opus: "border-agent-opus",
   sonnet: "border-agent-sonnet",
   haiku: "border-agent-haiku",
+  "gemini-pro": "border-[#4285F4]",
+  "gemini-flash": "border-[#FBBC04]",
+  "gemini-lite": "border-[#34A853]",
+  "gpt-5.4": "border-[#10A37F]",
+  "gpt-5.4-mini": "border-[#10A37F]",
+  "gpt-5.4-nano": "border-[#10A37F]",
 };
 
 export function AgentAvatar({

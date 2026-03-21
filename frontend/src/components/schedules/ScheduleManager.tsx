@@ -8,6 +8,7 @@ import {
   parseCronToForm,
   type ScheduleFormData,
 } from "./ScheduleForm";
+import { ScheduleCalendar } from "./ScheduleCalendar";
 
 const API_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -109,6 +110,8 @@ export function ScheduleManager() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [editSource, setEditSource] = useState<"list" | "calendar">("list");
   const [formData, setFormData] = useState<ScheduleFormData>({
     ...defaultFormData,
   });
@@ -248,7 +251,9 @@ export function ScheduleManager() {
     setEditingId(null);
     setFormData({ ...defaultFormData });
     setShowForm(false);
-  }, []);
+    setViewMode(editSource);
+    setEditSource("list");
+  }, [editSource]);
 
   /* ── Update handler — PATCH existing schedule ──────────────── */
 
@@ -290,12 +295,14 @@ export function ScheduleManager() {
         setEditingId(null);
         setFormData({ ...defaultFormData });
         setShowForm(false);
+        setViewMode(editSource);
+        setEditSource("list");
         await fetchSchedules();
       } catch (err) {
         console.error("Failed to update schedule:", err);
       }
     },
-    [editingId, formData, fetchSchedules]
+    [editingId, formData, fetchSchedules, editSource]
   );
 
   /* ── Render ────────────────────────────────────────────────── */
@@ -305,16 +312,36 @@ export function ScheduleManager() {
       {/* Header */}
       <div className="p-6 pb-0">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary font-display">
-            Schedules
-          </h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-text-primary font-display">
+              Schedules
+            </h2>
+            {/* View toggle */}
+            <div className="flex gap-0">
+              {(["list", "calendar"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)}
+                  className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+                    viewMode === m
+                      ? "border-accent-primary text-accent-primary bg-accent-primary/10 z-10"
+                      : "border-border text-text-secondary/40 hover:text-text-secondary/60"
+                  } ${m === "list" ? "rounded-l-[2px]" : "rounded-r-[2px] -ml-px"}`}
+                >
+                  {m === "list" ? "List" : "Calendar"}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={() => {
               if (showForm) {
-                // Cancel — reset form + editing state
+                // Cancel — reset form + editing state, return to source view
                 setShowForm(false);
                 setEditingId(null);
                 setFormData({ ...defaultFormData });
+                setViewMode(editSource);
+                setEditSource("list");
               } else {
                 setShowForm(true);
               }
@@ -355,8 +382,30 @@ export function ScheduleManager() {
             </div>
           )}
 
-          {/* Empty state */}
-          {!loading && schedules.length === 0 && (
+          {/* Calendar view */}
+          {!loading && viewMode === "calendar" && (
+            schedules.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <p className="text-sm text-text-secondary/50">
+                  No schedules yet
+                </p>
+                <p className="text-[11px] text-text-secondary/30 mt-1">
+                  Create one above or ask Clyde to schedule a task
+                </p>
+              </div>
+            ) : (
+              <ScheduleCalendar
+                schedules={schedules}
+                onEditSchedule={(s) => {
+                  setEditSource("calendar");
+                  handleEdit(s);
+                }}
+              />
+            )
+          )}
+
+          {/* List view — empty state */}
+          {!loading && viewMode === "list" && schedules.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-sm text-text-secondary/50">
                 No schedules yet
@@ -367,8 +416,8 @@ export function ScheduleManager() {
             </div>
           )}
 
-          {/* Schedule list */}
-          {schedules.map((s) => (
+          {/* List view — schedule list */}
+          {viewMode === "list" && schedules.map((s) => (
             <div
               key={s.id}
               className="group p-4 rounded-[2px] bg-bg-tertiary border border-border hover:border-accent-primary/20 transition-colors"
