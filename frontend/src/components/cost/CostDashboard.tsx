@@ -155,7 +155,7 @@ export function CostDashboard() {
               <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
                 By Platform
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 {data.by_platform.map((p) => (
                   <div
                     key={p.platform}
