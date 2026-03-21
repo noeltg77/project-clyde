@@ -217,7 +217,7 @@ export function ChatContainer() {
                   role: "agent",
                   agentName: evt.agent_name,
                   agentAvatar: (meta.avatar as string) || "",
-                  content: evt.description || "Task completed",
+                  content: "Task complete!",
                   createdAt: startEvt?.created_at || evt.created_at,
                   metadata: {
                     model_tier: (meta.model as string) || "sonnet",
@@ -465,7 +465,7 @@ export function ChatContainer() {
             if (tracked) {
               const durationMs = Date.now() - tracked.startTime;
               const tokenCount = (msg.data.token_count as number) || undefined;
-              const completionText = (msg.data.completion_text as string) || (msg.data.task_description as string) || "Task completed";
+              const completionText = (msg.data.completion_text as string) || (msg.data.task_description as string) || "Task complete!";
               updateMessage(tracked.msgId, {
                 content: completionText,
                 activityStatus: {
