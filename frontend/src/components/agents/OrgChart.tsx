@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
@@ -248,6 +248,192 @@ function TeamGroupCard({
   );
 }
 
+/* ─── HSV ↔ Hex helpers ─── */
+
+function hexToHsv(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  const v = max;
+  const s = max === 0 ? 0 : d / max;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h * 360, s, v];
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  const hh = h / 60;
+  const c = v * s;
+  const x = c * (1 - Math.abs((hh % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (hh < 1) { r = c; g = x; }
+  else if (hh < 2) { r = x; g = c; }
+  else if (hh < 3) { g = c; b = x; }
+  else if (hh < 4) { g = x; b = c; }
+  else if (hh < 5) { r = x; b = c; }
+  else { r = c; b = x; }
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+/* ─── Custom styled colour picker ─── */
+
+function TeamColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [hsv, setHsv] = useState<[number, number, number]>(() => hexToHsv(value));
+  const svCanvasRef = useRef<HTMLCanvasElement>(null);
+  const hueCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [draggingSV, setDraggingSV] = useState(false);
+  const [draggingHue, setDraggingHue] = useState(false);
+
+  const SV_W = 220, SV_H = 150, HUE_W = 220, HUE_H = 14;
+
+  // Sync when external value changes
+  useEffect(() => {
+    setHsv(hexToHsv(value));
+  }, [value]);
+
+  // Draw saturation/value gradient
+  const drawSV = useCallback((h: number) => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // White → hue horizontal gradient
+    const hGrad = ctx.createLinearGradient(0, 0, SV_W, 0);
+    hGrad.addColorStop(0, "#FFFFFF");
+    hGrad.addColorStop(1, hsvToHex(h, 1, 1));
+    ctx.fillStyle = hGrad;
+    ctx.fillRect(0, 0, SV_W, SV_H);
+
+    // Transparent → black vertical gradient
+    const vGrad = ctx.createLinearGradient(0, 0, 0, SV_H);
+    vGrad.addColorStop(0, "rgba(0,0,0,0)");
+    vGrad.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(0, 0, SV_W, SV_H);
+  }, []);
+
+  // Draw hue bar
+  const drawHue = useCallback(() => {
+    const canvas = hueCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const grad = ctx.createLinearGradient(0, 0, HUE_W, 0);
+    for (let i = 0; i <= 6; i++) {
+      grad.addColorStop(i / 6, hsvToHex(i * 60, 1, 1));
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, HUE_W, HUE_H);
+  }, []);
+
+  useEffect(() => {
+    drawSV(hsv[0]);
+    drawHue();
+  }, [hsv[0], drawSV, drawHue]);
+
+  const updateSV = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+    const newHsv: [number, number, number] = [hsv[0], s, v];
+    setHsv(newHsv);
+    onChange(hsvToHex(newHsv[0], newHsv[1], newHsv[2]));
+  }, [hsv, onChange]);
+
+  const updateHue = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const canvas = hueCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const h = Math.max(0, Math.min(359, ((e.clientX - rect.left) / rect.width) * 360));
+    const newHsv: [number, number, number] = [h, hsv[1], hsv[2]];
+    setHsv(newHsv);
+    onChange(hsvToHex(newHsv[0], newHsv[1], newHsv[2]));
+  }, [hsv, onChange]);
+
+  // Global mouse listeners for dragging
+  useEffect(() => {
+    if (!draggingSV && !draggingHue) return;
+    const handleMove = (e: MouseEvent) => {
+      if (draggingSV) updateSV(e);
+      if (draggingHue) updateHue(e);
+    };
+    const handleUp = () => {
+      setDraggingSV(false);
+      setDraggingHue(false);
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingSV, draggingHue, updateSV, updateHue]);
+
+  // Thumb positions
+  const svThumbX = hsv[1] * SV_W;
+  const svThumbY = (1 - hsv[2]) * SV_H;
+  const hueThumbX = (hsv[0] / 360) * HUE_W;
+
+  return (
+    <div className="space-y-3">
+      {/* Saturation / Value canvas */}
+      <div className="relative" style={{ width: SV_W, height: SV_H }}>
+        <canvas
+          ref={svCanvasRef}
+          width={SV_W}
+          height={SV_H}
+          className="rounded-[3px] cursor-crosshair block"
+          onMouseDown={(e) => { setDraggingSV(true); updateSV(e); }}
+        />
+        {/* Thumb */}
+        <div
+          className="absolute pointer-events-none"
+          style={{ left: svThumbX - 7, top: svThumbY - 7 }}
+        >
+          <div className="w-[14px] h-[14px] rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.3),inset_0_0_0_1px_rgba(0,0,0,0.2)]" />
+        </div>
+      </div>
+
+      {/* Hue bar */}
+      <div className="relative" style={{ width: HUE_W, height: HUE_H }}>
+        <canvas
+          ref={hueCanvasRef}
+          width={HUE_W}
+          height={HUE_H}
+          className="rounded-full cursor-pointer block"
+          onMouseDown={(e) => { setDraggingHue(true); updateHue(e); }}
+        />
+        {/* Hue thumb */}
+        <div
+          className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ left: hueThumbX - 7 }}
+        >
+          <div className="w-[14px] h-[14px] rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+            style={{ backgroundColor: hsvToHex(hsv[0], 1, 1) }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Inline-editable Team Header ─── */
 function TeamHeader({
   team,
@@ -342,26 +528,24 @@ function TeamHeader({
 
         {/* Colour picker popover */}
         {colorPickerOpen && (
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-bg-secondary border border-border rounded-[4px] p-4 shadow-xl min-w-[220px]">
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-bg-secondary border border-border rounded-[4px] p-4 shadow-xl"
+            style={{ width: 252 }}
+          >
             <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
               Team Colour
             </p>
 
-            {/* Native colour wheel input */}
-            <div className="flex justify-center mb-3">
-              <input
-                type="color"
-                value={draftColor}
-                onChange={(e) => {
-                  setDraftColor(e.target.value);
-                  setHexInput(e.target.value);
-                }}
-                className="w-full h-10 cursor-pointer rounded-[2px] border border-border bg-transparent"
-              />
-            </div>
+            {/* Custom SV + Hue picker */}
+            <TeamColorPicker
+              value={draftColor}
+              onChange={(hex) => {
+                setDraftColor(hex);
+                setHexInput(hex);
+              }}
+            />
 
             {/* Hex input */}
-            <div className="mb-3">
+            <div className="mt-3 mb-3">
               <label className="text-[10px] text-text-secondary/40 block mb-1">Hex Code</label>
               <input
                 type="text"
@@ -384,7 +568,7 @@ function TeamHeader({
             {/* Preview + Save */}
             <div className="flex items-center gap-2">
               <div
-                className="w-6 h-6 rounded-[2px] border border-white/20 flex-shrink-0"
+                className="w-6 h-6 rounded-[2px] border border-white/10 flex-shrink-0"
                 style={{ backgroundColor: draftColor }}
               />
               <button
