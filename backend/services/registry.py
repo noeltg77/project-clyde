@@ -289,6 +289,7 @@ def load_registry(working_dir: str) -> dict[str, Any]:
                 "id": team_id,
                 "name": team_entry.get("name", team_data.get("name", "")),
                 "color": team_entry.get("color", team_data.get("color", "#6B7280")),
+                "icon": team_entry.get("icon", team_data.get("icon", "Users")),
                 "created_at": team_data.get("created_at", ""),
             })
 

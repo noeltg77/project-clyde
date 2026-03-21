@@ -2489,6 +2489,7 @@ async def chat_websocket(ws: WebSocket):
                                     "id": a["id"],
                                     "name": a["name"],
                                     "role": a["role"],
+                                    "platform": a.get("platform", "claude"),
                                     "model": a.get("model", "sonnet"),
                                     "avatar": a.get("avatar"),
                                     "status": a.get("status", "active"),

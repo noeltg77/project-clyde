@@ -428,7 +428,8 @@ export function ChatContainer() {
             id: string;
             name: string;
             role: string;
-            model: "opus" | "sonnet" | "haiku";
+            platform?: string;
+            model: string;
             avatar: string;
             status: "active" | "paused" | "archived";
             tools: string[];
@@ -441,7 +442,8 @@ export function ChatContainer() {
                 registryId: a.id,
                 name: a.name,
                 role: a.role,
-                model: a.model || "sonnet",
+                platform: (a.platform || "claude") as Agent["platform"],
+                model: (a.model || "sonnet") as Agent["model"],
                 avatar: a.avatar || "",
                 status: a.status || "active",
                 tools: a.tools || [],
