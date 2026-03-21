@@ -449,11 +449,14 @@ async def list_teams_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "update_team",
-    "Update a team's name or color. Specify the team by name or ID.",
+    "Update a team's name, color, or icon. Specify the team by name or ID. "
+    "Icon should be a Lucide icon name (e.g. Code, Palette, FlaskConical, "
+    "Megaphone, Rocket, Shield, Wrench, Target, Zap, Database, Layers).",
     {
         "team_name_or_id": str,
         "name": str,
         "color": str,
+        "icon": str,
     },
 )
 async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -479,6 +482,10 @@ async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
         new_color = args.get("color", "").strip()
         if new_color:
             updates["color"] = new_color
+
+        new_icon = args.get("icon", "").strip()
+        if new_icon:
+            updates["icon"] = new_icon
 
         if not updates:
             return _error_response("No updates provided.")
