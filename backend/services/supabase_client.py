@@ -364,6 +364,9 @@ async def get_cost_summary() -> dict:
         lambda: {"cost_usd": 0.0, "message_count": 0}
     )
     daily_costs: dict[str, float] = defaultdict(float)
+    daily_platform_costs: dict[str, dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
     platform_costs: dict[str, dict] = defaultdict(
         lambda: {"cost_usd": 0.0, "message_count": 0}
     )
@@ -388,6 +391,7 @@ async def get_cost_summary() -> dict:
         # Date aggregates
         date_key = msg_time.strftime("%Y-%m-%d")
         daily_costs[date_key] += cost
+        daily_platform_costs[date_key][platform] += cost
 
         if msg_time >= today_start:
             today_usd += cost
@@ -427,15 +431,18 @@ async def get_cost_summary() -> dict:
         )
     ]
 
-    # Build daily breakdown (last 14 days)
+    # Build daily breakdown (last 14 days) with per-platform split
     daily_breakdown = []
     for i in range(14):
         d = today_start - timedelta(days=13 - i)
         date_key = d.strftime("%Y-%m-%d")
         cost_usd = daily_costs.get(date_key, 0.0)
+        platform_split = daily_platform_costs.get(date_key, {})
         daily_breakdown.append({
             "date": date_key,
             "cost_usd": round(cost_usd, 4),
+            "claude": round(platform_split.get("claude", 0.0), 4),
+            "gemini": round(platform_split.get("gemini", 0.0), 4),
         })
 
     return {
