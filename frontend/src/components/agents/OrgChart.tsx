@@ -253,14 +253,20 @@ function TeamHeader({
   team,
   onBack,
   onRename,
+  onColorChange,
 }: {
   team: Team;
   onBack: () => void;
   onRename: (newName: string) => void;
+  onColorChange: (newColor: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(team.name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [draftColor, setDraftColor] = useState(team.color);
+  const [hexInput, setHexInput] = useState(team.color);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -268,6 +274,26 @@ function TeamHeader({
       inputRef.current.select();
     }
   }, [editing]);
+
+  // Sync draft colour when team changes
+  useEffect(() => {
+    setDraftColor(team.color);
+    setHexInput(team.color);
+  }, [team.color]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!colorPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setColorPickerOpen(false);
+        setDraftColor(team.color);
+        setHexInput(team.color);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [colorPickerOpen, team.color]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -277,6 +303,20 @@ function TeamHeader({
       setDraft(team.name);
     }
     setEditing(false);
+  };
+
+  const handleHexChange = (value: string) => {
+    setHexInput(value);
+    // Auto-apply if it looks like a valid hex colour
+    const cleaned = value.startsWith("#") ? value : `#${value}`;
+    if (/^#[0-9A-Fa-f]{6}$/.test(cleaned)) {
+      setDraftColor(cleaned);
+    }
+  };
+
+  const saveColor = () => {
+    onColorChange(draftColor);
+    setColorPickerOpen(false);
   };
 
   return (
@@ -291,10 +331,72 @@ function TeamHeader({
         Back
       </button>
 
-      <div
-        className="w-4 h-4 rounded-[2px] flex-shrink-0"
-        style={{ backgroundColor: team.color }}
-      />
+      {/* Colour square — click to open picker */}
+      <div className="relative" ref={pickerRef}>
+        <button
+          onClick={() => setColorPickerOpen(!colorPickerOpen)}
+          className="w-5 h-5 rounded-[2px] flex-shrink-0 border border-white/20 hover:border-white/50 transition-colors cursor-pointer"
+          style={{ backgroundColor: team.color }}
+          title="Change team colour"
+        />
+
+        {/* Colour picker popover */}
+        {colorPickerOpen && (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-bg-secondary border border-border rounded-[4px] p-4 shadow-xl min-w-[220px]">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
+              Team Colour
+            </p>
+
+            {/* Native colour wheel input */}
+            <div className="flex justify-center mb-3">
+              <input
+                type="color"
+                value={draftColor}
+                onChange={(e) => {
+                  setDraftColor(e.target.value);
+                  setHexInput(e.target.value);
+                }}
+                className="w-full h-10 cursor-pointer rounded-[2px] border border-border bg-transparent"
+              />
+            </div>
+
+            {/* Hex input */}
+            <div className="mb-3">
+              <label className="text-[10px] text-text-secondary/40 block mb-1">Hex Code</label>
+              <input
+                type="text"
+                value={hexInput}
+                onChange={(e) => handleHexChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveColor();
+                  if (e.key === "Escape") {
+                    setColorPickerOpen(false);
+                    setDraftColor(team.color);
+                    setHexInput(team.color);
+                  }
+                }}
+                placeholder="#FF6B6B"
+                maxLength={7}
+                className="w-full px-2 py-1.5 text-sm font-mono bg-bg-tertiary border border-border rounded-[2px] text-text-primary outline-none focus:border-accent-primary/50"
+              />
+            </div>
+
+            {/* Preview + Save */}
+            <div className="flex items-center gap-2">
+              <div
+                className="w-6 h-6 rounded-[2px] border border-white/20 flex-shrink-0"
+                style={{ backgroundColor: draftColor }}
+              />
+              <button
+                onClick={saveColor}
+                className="flex-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] bg-accent-primary text-bg-primary hover:bg-accent-primary/90 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {editing ? (
         <>
@@ -561,7 +663,7 @@ export function OrgChart() {
   const [loading, setLoading] = useState(true);
 
   // View mode: flat (all agents) or teams (grouped by team)
-  const [viewMode, setViewMode] = useState<"flat" | "teams">("flat");
+  const [viewMode, setViewMode] = useState<"flat" | "teams">("teams");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -663,6 +765,22 @@ export function OrgChart() {
       }
     } catch (err) {
       console.error("Failed to rename team:", err);
+    }
+  };
+
+  // Handle team colour change via REST
+  const handleTeamColorChange = async (teamId: string, newColor: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: newColor }),
+      });
+      if (res.ok) {
+        updateTeamStore(teamId, { color: newColor });
+      }
+    } catch (err) {
+      console.error("Failed to update team colour:", err);
     }
   };
 
@@ -1062,6 +1180,7 @@ export function OrgChart() {
                           setSelectedAgent(null);
                         }}
                         onRename={(newName) => handleTeamRename(selectedTeamId, newName)}
+                        onColorChange={(newColor) => handleTeamColorChange(selectedTeamId, newColor)}
                       />
                     )
                   )}
