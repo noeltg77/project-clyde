@@ -58,9 +58,9 @@ GEMINI_PRO_LONG_CONTEXT_PRICING: tuple[float, float] = (4.0, 18.0)
 
 # Maps OpenAI tier names to API model IDs
 OPENAI_MODEL_ID_MAP: dict[str, str] = {
-    "openai-full": "gpt-5.4",
-    "openai-mini": "gpt-5.4-mini",
-    "openai-nano": "gpt-5.4-nano",
+    "gpt-5.4": "gpt-5.4",
+    "gpt-5.4-mini": "gpt-5.4-mini",
+    "gpt-5.4-nano": "gpt-5.4-nano",
 }
 
 # OpenAI pricing per 1M tokens: (input_usd, output_usd)

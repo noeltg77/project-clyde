@@ -20,9 +20,9 @@ const connectorColor: Record<string, string> = {
   "gemini-pro": "#4285F4",
   "gemini-flash": "#FBBC04",
   "gemini-lite": "#34A853",
-  "openai-full": "#10A37F",
-  "openai-mini": "#10A37F",
-  "openai-nano": "#10A37F",
+  "gpt-5.4": "#10A37F",
+  "gpt-5.4-mini": "#10A37F",
+  "gpt-5.4-nano": "#10A37F",
 };
 
 /* ─── SVG connector lines between nodes ─── */
@@ -156,9 +156,9 @@ function AgentNode({
     "gemini-pro": "border-[#4285F4]",
     "gemini-flash": "border-[#FBBC04]",
     "gemini-lite": "border-[#34A853]",
-    "openai-full": "border-[#10A37F]",
-    "openai-mini": "border-[#10A37F]",
-    "openai-nano": "border-[#10A37F]",
+    "gpt-5.4": "border-[#10A37F]",
+    "gpt-5.4-mini": "border-[#10A37F]",
+    "gpt-5.4-nano": "border-[#10A37F]",
   };
   const borderColor = isOrchestrator
     ? "border-agent-opus"

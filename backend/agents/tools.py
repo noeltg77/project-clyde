@@ -125,7 +125,7 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
         _platform_default_model = {
             "claude": default_model,
             "gemini": "gemini-flash",
-            "openai": "openai-mini",
+            "openai": "gpt-5.4-mini",
         }
         model = args.get("model", _platform_default_model.get(platform, default_model)).strip().lower()
         gender = args.get("gender", "male").strip().lower()
@@ -144,8 +144,8 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response(f"Invalid Claude model '{model}'. Must be sonnet, haiku, or opus.")
         if platform == "gemini" and model not in ("gemini-pro", "gemini-flash", "gemini-lite"):
             return _error_response(f"Invalid Gemini model '{model}'. Must be gemini-pro, gemini-flash, or gemini-lite.")
-        if platform == "openai" and model not in ("openai-full", "openai-mini", "openai-nano"):
-            return _error_response(f"Invalid OpenAI model '{model}'. Must be openai-full, openai-mini, or openai-nano.")
+        if platform == "openai" and model not in ("gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"):
+            return _error_response(f"Invalid OpenAI model '{model}'. Must be gpt-5.4, gpt-5.4-mini, or gpt-5.4-nano.")
         if gender not in ("male", "female"):
             return _error_response(f"Invalid gender '{gender}'. Must be male or female.")
 
@@ -271,7 +271,7 @@ async def update_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             valid_models = (
                 "sonnet", "haiku", "opus",
                 "gemini-pro", "gemini-flash", "gemini-lite",
-                "openai-full", "openai-mini", "openai-nano",
+                "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
             )
             if model not in valid_models:
                 return _error_response(f"Invalid model '{model}'. Valid: {', '.join(valid_models)}")
@@ -3116,7 +3116,7 @@ async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
             )
 
         # Resolve model ID
-        model_tier = agent.get("model", "openai-mini")
+        model_tier = agent.get("model", "gpt-5.4-mini")
         model_id = OPENAI_MODEL_ID_MAP.get(model_tier)
         if not model_id:
             return _error_response(

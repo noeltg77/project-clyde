@@ -3,7 +3,7 @@ import { createStore } from "zustand/vanilla";
 export type AgentPlatform = "claude" | "gemini" | "openai";
 export type ClaudeModel = "opus" | "sonnet" | "haiku";
 export type GeminiModel = "gemini-pro" | "gemini-flash" | "gemini-lite";
-export type OpenAIModel = "openai-full" | "openai-mini" | "openai-nano";
+export type OpenAIModel = "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.4-nano";
 export type AgentModel = ClaudeModel | GeminiModel | OpenAIModel;
 
 export type Agent = {
