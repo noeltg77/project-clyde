@@ -23,6 +23,7 @@ export type Team = {
   id: string;
   name: string;
   color: string;
+  icon: string;
   created_at: string;
 };
 

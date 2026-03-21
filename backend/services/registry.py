@@ -638,6 +638,7 @@ def create_team(
     working_dir: str,
     name: str,
     color: str | None = None,
+    icon: str | None = None,
 ) -> dict[str, Any]:
     """Create a new team. Auto-assigns a color if none provided.
 
@@ -663,11 +664,14 @@ def create_team(
     team_id = f"team-{uuid.uuid4().hex[:12]}"
     created_at = datetime.now(timezone.utc).isoformat()
 
+    icon = icon or "Users"
+
     # Add to index
     team_index_entry = {
         "id": team_id,
         "name": name,
         "color": color,
+        "icon": icon,
         "file": f"teams/{team_id}.json",
     }
     if "teams" not in index:
@@ -681,6 +685,7 @@ def create_team(
         "id": team_id,
         "name": name,
         "color": color,
+        "icon": icon,
         "workflows": [],
         "delegation_notes": "",
         "members": [],
@@ -692,6 +697,7 @@ def create_team(
         "id": team_id,
         "name": name,
         "color": color,
+        "icon": icon,
         "created_at": created_at,
     }
 
@@ -716,11 +722,13 @@ def update_team(
     found = False
     for i, team in enumerate(index.get("teams", [])):
         if team["id"] == team_id:
-            # Only update fields that exist in the index (name, color)
+            # Only update fields that exist in the index (name, color, icon)
             if "name" in updates:
                 index["teams"][i]["name"] = updates["name"]
             if "color" in updates:
                 index["teams"][i]["color"] = updates["color"]
+            if "icon" in updates:
+                index["teams"][i]["icon"] = updates["icon"]
             found = True
             break
 

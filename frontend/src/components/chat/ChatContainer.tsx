@@ -456,6 +456,7 @@ export function ChatContainer() {
             id: string;
             name: string;
             color: string;
+            icon?: string;
             created_at?: string;
           }>;
           if (teams) {
@@ -464,6 +465,7 @@ export function ChatContainer() {
                 id: t.id,
                 name: t.name,
                 color: t.color,
+                icon: t.icon || "Users",
                 created_at: t.created_at || "",
               }))
             );
@@ -676,10 +678,11 @@ export function ChatContainer() {
 
           // Populate teams
           const teamsData = (data.teams || []).map(
-            (t: { id: string; name: string; color: string; created_at?: string }) => ({
+            (t: { id: string; name: string; color: string; icon?: string; created_at?: string }) => ({
               id: t.id,
               name: t.name,
               color: t.color,
+              icon: t.icon || "Users",
               created_at: t.created_at || "",
             })
           );

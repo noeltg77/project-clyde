@@ -366,10 +366,18 @@ async def get_agent_details_tool(args: dict[str, Any]) -> dict[str, Any]:
 @tool(
     "create_team",
     "Create a new team for grouping agents by function or project. "
-    "A unique color is assigned automatically unless specified.",
+    "A unique color is assigned automatically unless specified. "
+    "Set icon to a Lucide icon name that represents the team's function. "
+    "Common icons: Code, Palette, PenTool, FlaskConical, Megaphone, "
+    "BarChart3, Shield, Rocket, Users, Lightbulb, Wrench, Globe, "
+    "BookOpen, Camera, Cpu, Database, Layers, Target, Zap, "
+    "Briefcase, Building2, GraduationCap, Headphones, Mail, "
+    "MessageSquare, Music, Newspaper, Search, ShoppingCart, "
+    "Star, TrendingUp, Video, Wand2.",
     {
         "name": str,
         "color": str,
+        "icon": str,
     },
 )
 async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -377,6 +385,7 @@ async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
     try:
         name = args.get("name", "").strip()
         color = args.get("color", "").strip() or None
+        icon = args.get("icon", "").strip() or None
 
         if not name:
             return _error_response("Team name is required.")
@@ -385,13 +394,15 @@ async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
             working_dir=_working_dir,
             name=name,
             color=color,
+            icon=icon,
         )
 
         return _text_response(
             f"Successfully created team:\n"
             f"  Name: {team_entry['name']}\n"
             f"  ID: {team_entry['id']}\n"
-            f"  Color: {team_entry['color']}"
+            f"  Color: {team_entry['color']}\n"
+            f"  Icon: {team_entry['icon']}"
         )
 
     except ValueError as e:

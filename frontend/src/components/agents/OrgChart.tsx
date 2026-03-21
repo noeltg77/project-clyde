@@ -7,6 +7,7 @@ import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "./AgentAvatar";
 import { ModelBadge } from "./ModelBadge";
 import { TeamBadge } from "./TeamBadge";
+import { DynamicIcon, TeamIconPicker } from "./TeamIconPicker";
 import type { Agent, Team } from "@/stores/agent-store";
 
 const API_URL =
@@ -237,9 +238,11 @@ function TeamGroupCard({
       style={{ borderColor: team.color, zIndex: 1 }}
     >
       <div
-        className="w-5 h-5 rounded-[2px]"
-        style={{ backgroundColor: team.color }}
-      />
+        className="w-8 h-8 rounded-[4px] flex items-center justify-center"
+        style={{ backgroundColor: `${team.color}20` }}
+      >
+        <DynamicIcon name={team.icon || "Users"} size={18} color={team.color} />
+      </div>
       <p className="font-bold text-text-primary text-base">{team.name}</p>
       <p className="text-text-secondary text-[12px]">
         {memberCount} {memberCount === 1 ? "agent" : "agents"}
@@ -440,16 +443,19 @@ function TeamHeader({
   onBack,
   onRename,
   onColorChange,
+  onIconChange,
 }: {
   team: Team;
   onBack: () => void;
   onRename: (newName: string) => void;
   onColorChange: (newColor: string) => void;
+  onIconChange: (newIcon: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(team.name);
   const inputRef = useRef<HTMLInputElement>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [draftColor, setDraftColor] = useState(team.color);
   const [hexInput, setHexInput] = useState(team.color);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -517,11 +523,35 @@ function TeamHeader({
         Back
       </button>
 
-      {/* Colour square — click to open picker */}
+      {/* Icon — click to open icon picker */}
+      <div className="relative">
+        <button
+          onClick={() => { setIconPickerOpen(!iconPickerOpen); setColorPickerOpen(false); }}
+          className="w-8 h-8 rounded-[4px] flex items-center justify-center flex-shrink-0 border border-white/10 hover:border-white/30 transition-colors cursor-pointer"
+          style={{ backgroundColor: `${team.color}20` }}
+          title="Change team icon"
+        >
+          <DynamicIcon name={team.icon || "Users"} size={18} color={team.color} />
+        </button>
+
+        {iconPickerOpen && (
+          <TeamIconPicker
+            value={team.icon || "Users"}
+            teamColor={team.color}
+            onSelect={(iconName) => {
+              onIconChange(iconName);
+              setIconPickerOpen(false);
+            }}
+            onClose={() => setIconPickerOpen(false)}
+          />
+        )}
+      </div>
+
+      {/* Colour dot — click to open colour picker */}
       <div className="relative" ref={pickerRef}>
         <button
-          onClick={() => setColorPickerOpen(!colorPickerOpen)}
-          className="w-5 h-5 rounded-[2px] flex-shrink-0 border border-white/20 hover:border-white/50 transition-colors cursor-pointer"
+          onClick={() => { setColorPickerOpen(!colorPickerOpen); setIconPickerOpen(false); }}
+          className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20 hover:border-white/50 transition-colors cursor-pointer"
           style={{ backgroundColor: team.color }}
           title="Change team colour"
         />
@@ -897,10 +927,11 @@ export function OrgChart() {
 
           // Parse teams
           const parsedTeams: Team[] = (data.teams || []).map(
-            (t: { id: string; name: string; color: string; created_at?: string }) => ({
+            (t: { id: string; name: string; color: string; icon?: string; created_at?: string }) => ({
               id: t.id,
               name: t.name,
               color: t.color,
+              icon: t.icon || "Users",
               created_at: t.created_at || "",
             })
           );
@@ -965,6 +996,22 @@ export function OrgChart() {
       }
     } catch (err) {
       console.error("Failed to update team colour:", err);
+    }
+  };
+
+  // Handle team icon change via REST
+  const handleTeamIconChange = async (teamId: string, newIcon: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ icon: newIcon }),
+      });
+      if (res.ok) {
+        updateTeamStore(teamId, { icon: newIcon });
+      }
+    } catch (err) {
+      console.error("Failed to update team icon:", err);
     }
   };
 
@@ -1365,6 +1412,7 @@ export function OrgChart() {
                         }}
                         onRename={(newName) => handleTeamRename(selectedTeamId, newName)}
                         onColorChange={(newColor) => handleTeamColorChange(selectedTeamId, newColor)}
+                        onIconChange={(newIcon) => handleTeamIconChange(selectedTeamId, newIcon)}
                       />
                     )
                   )}
