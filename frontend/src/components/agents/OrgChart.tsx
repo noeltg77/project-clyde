@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "./AgentAvatar";
-import { ModelBadge } from "./ModelBadge";
+import { PlatformLogo } from "./PlatformLogo";
 import { TeamBadge } from "./TeamBadge";
 import { DynamicIcon, TeamIconPicker } from "./TeamIconPicker";
 import type { Agent, Team } from "@/stores/agent-store";
@@ -165,15 +165,6 @@ function AgentNode({
     ? "border-agent-opus"
     : modelBorderMap[agent.model] || "border-agent-opus";
 
-  const statusDotColor =
-    agent.status === "active"
-      ? isActive
-        ? "bg-accent-primary"
-        : "bg-accent-tertiary"
-      : agent.status === "paused"
-      ? "bg-yellow-500"
-      : "bg-text-secondary/30";
-
   const avatarSize = 72;
 
   return (
@@ -189,10 +180,10 @@ function AgentNode({
       `}
       style={{ zIndex: 1, ...(teamBorderColor ? { borderColor: teamBorderColor } : {}) }}
     >
-      {/* Status indicator — top-right square dot */}
-      <div
-        className={`absolute top-3 right-3 w-2 h-2 rounded-[1px] ${statusDotColor}`}
-      />
+      {/* Platform logo — top-right */}
+      <div className="absolute top-3 right-3">
+        <PlatformLogo platform={agent.platform || "claude"} size={16} />
+      </div>
 
       <AgentAvatar
         src={agent.avatar || undefined}
@@ -211,7 +202,6 @@ function AgentNode({
       </div>
 
       <div className="flex flex-col items-center gap-1.5">
-        <ModelBadge model={agent.model} />
         {team && <TeamBadge name={team.name} color={team.color} />}
       </div>
     </button>
