@@ -6,6 +6,7 @@ import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "./AgentAvatar";
 import { PlatformLogo } from "./PlatformLogo";
+import { ModelBadge } from "./ModelBadge";
 import { TeamBadge } from "./TeamBadge";
 import { DynamicIcon, TeamIconPicker } from "./TeamIconPicker";
 import type { Agent, Team } from "@/stores/agent-store";
@@ -202,6 +203,7 @@ function AgentNode({
       </div>
 
       <div className="flex flex-col items-center gap-1.5">
+        <ModelBadge model={agent.model} />
         {team && <TeamBadge name={team.name} color={team.color} />}
       </div>
     </button>
