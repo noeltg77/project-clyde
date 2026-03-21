@@ -3,7 +3,7 @@
 import { useChatStore } from "@/stores/chat-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
-import { ModelBadge } from "@/components/agents/ModelBadge";
+import { PlatformLogo } from "@/components/agents/PlatformLogo";
 
 export function ActivityPanel() {
   const isConnected = useChatStore((s) => s.isConnected);
@@ -62,7 +62,7 @@ export function ActivityPanel() {
               </span>
             </div>
           </div>
-          <ModelBadge model={clydeModel} />
+          <PlatformLogo platform={orchestrator?.platform || "claude"} />
         </div>
 
         {/* Subagents */}
@@ -98,7 +98,7 @@ export function ActivityPanel() {
                     </span>
                   </div>
                 </div>
-                <ModelBadge model={agent.model} />
+                <PlatformLogo platform={agent.platform} />
               </div>
             );
           })}
@@ -128,7 +128,7 @@ export function ActivityPanel() {
                   </span>
                 </div>
               </div>
-              <ModelBadge model={agent.model} />
+              <PlatformLogo platform={agent.platform} />
             </div>
           ))}
 
