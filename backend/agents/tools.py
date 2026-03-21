@@ -122,7 +122,12 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
         platform = args.get("platform", "claude").strip().lower()
         settings = load_settings(_working_dir)
         default_model = settings.get("subagent_default_model", "sonnet")
-        model = args.get("model", default_model if platform == "claude" else "gemini-flash").strip().lower()
+        _platform_default_model = {
+            "claude": default_model,
+            "gemini": "gemini-flash",
+            "openai": "openai-mini",
+        }
+        model = args.get("model", _platform_default_model.get(platform, default_model)).strip().lower()
         gender = args.get("gender", "male").strip().lower()
         system_prompt = args.get("system_prompt", "").strip()
         tools_str = args.get("tools", "")
@@ -133,17 +138,19 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("Agent role is required.")
         if not system_prompt:
             return _error_response("System prompt is required.")
-        if platform not in ("claude", "gemini"):
-            return _error_response(f"Invalid platform '{platform}'. Must be claude or gemini.")
+        if platform not in ("claude", "gemini", "openai"):
+            return _error_response(f"Invalid platform '{platform}'. Must be claude, gemini, or openai.")
         if platform == "claude" and model not in ("sonnet", "haiku", "opus"):
             return _error_response(f"Invalid Claude model '{model}'. Must be sonnet, haiku, or opus.")
         if platform == "gemini" and model not in ("gemini-pro", "gemini-flash", "gemini-lite"):
             return _error_response(f"Invalid Gemini model '{model}'. Must be gemini-pro, gemini-flash, or gemini-lite.")
+        if platform == "openai" and model not in ("openai-full", "openai-mini", "openai-nano"):
+            return _error_response(f"Invalid OpenAI model '{model}'. Must be openai-full, openai-mini, or openai-nano.")
         if gender not in ("male", "female"):
             return _error_response(f"Invalid gender '{gender}'. Must be male or female.")
 
-        # Gemini agents are tool-free — force empty tools
-        if platform == "gemini":
+        # Gemini and OpenAI agents are tool-free — force empty tools
+        if platform in ("gemini", "openai"):
             tools_list = []
         else:
             # Parse tools — accept comma-separated string or JSON array
@@ -261,8 +268,13 @@ async def update_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
 
         model = args.get("model", "").strip().lower()
         if model:
-            if model not in ("sonnet", "haiku", "opus"):
-                return _error_response(f"Invalid model '{model}'.")
+            valid_models = (
+                "sonnet", "haiku", "opus",
+                "gemini-pro", "gemini-flash", "gemini-lite",
+                "openai-full", "openai-mini", "openai-nano",
+            )
+            if model not in valid_models:
+                return _error_response(f"Invalid model '{model}'. Valid: {', '.join(valid_models)}")
             updates["model"] = model
 
         status = args.get("status", "").strip().lower()
