@@ -218,10 +218,10 @@ export function CostDashboard() {
                       borderRadius: "2px",
                       fontSize: 12,
                     }}
-                    formatter={(value: number, name: string) => [
+                    formatter={((value: number | undefined, name: string | undefined) => [
                       `$${(value ?? 0).toFixed(4)}`,
-                      PLATFORM_LABELS[name] ?? name,
-                    ]}
+                      PLATFORM_LABELS[name ?? ""] ?? name ?? "",
+                    ]) as never}
                     labelStyle={{ color: "rgba(255,255,255,0.5)" }}
                   />
                   {hasAnyPlatform && (

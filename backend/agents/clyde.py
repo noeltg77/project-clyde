@@ -586,15 +586,22 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
+        # Persist to Supabase (include registry data for session resume)
         try:
             await save_activity_event(
                 session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
+                agent_id=registry_agent.get("id", agent_id),
+                agent_name=registry_agent.get("name", agent_label),
                 event_type="started",
                 description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
+                metadata={
+                    "parent_agent": parent_agent,
+                    "is_team_member": is_team_member,
+                    "model": registry_agent.get("model", "sonnet"),
+                    "avatar": registry_agent.get("avatar", ""),
+                    "role": registry_agent.get("role", "Subagent"),
+                    "platform": registry_agent.get("platform", "claude"),
+                },
             )
         except Exception:
             pass
@@ -649,15 +656,22 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
+        # Persist to Supabase (include registry data for session resume)
         try:
             await save_activity_event(
                 session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
+                agent_id=registry_agent.get("id", agent_id),
+                agent_name=registry_agent.get("name", agent_label),
                 event_type="stopped",
                 description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
+                metadata={
+                    "parent_agent": parent_agent,
+                    "is_team_member": is_team_member,
+                    "model": registry_agent.get("model", "sonnet"),
+                    "avatar": registry_agent.get("avatar", ""),
+                    "role": registry_agent.get("role", "Subagent"),
+                    "platform": registry_agent.get("platform", "claude"),
+                },
             )
         except Exception:
             pass

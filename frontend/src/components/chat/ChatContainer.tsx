@@ -74,6 +74,8 @@ export function ChatContainer() {
   const lastFinishedMsgId = useRef<string | null>(null);
   // Track inline activity message IDs per agent (for updating working→complete)
   const activityMsgIds = useRef<Record<string, { msgId: string; startTime: number }>>({});
+  // Keep a ref to current messages so handlers within the same tick can read latest state
+  const messagesRef = useRef<Message[]>([]);
 
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
@@ -154,6 +156,7 @@ export function ChatContainer() {
                 steps,
               };
             });
+            messagesRef.current = formatted;
             setMessages(formatted);
           }
           setLoadingSession(false);
@@ -184,6 +187,54 @@ export function ChatContainer() {
             }));
             // Reverse so newest first (matches store convention)
             setActivityEvents(formatted.reverse());
+
+            // Reconstruct activity callout messages for the chat timeline
+            // Pair started → stopped events by agent_id to build completed callouts
+            const startedMap = new Map<string, typeof events[0]>();
+            const activityMessages: Message[] = [];
+
+            for (const evt of events) {
+              if (evt.event_type === "started") {
+                startedMap.set(evt.agent_id, evt);
+              } else if (evt.event_type === "stopped") {
+                const startEvt = startedMap.get(evt.agent_id);
+                const meta = evt.metadata || startEvt?.metadata || {};
+                const startTime = startEvt ? new Date(startEvt.created_at).getTime() : 0;
+                const stopTime = new Date(evt.created_at).getTime();
+                const durationMs = startEvt ? stopTime - startTime : undefined;
+
+                activityMessages.push({
+                  id: `activity-restored-${evt.id}`,
+                  sessionId: "",
+                  role: "agent",
+                  agentName: evt.agent_name,
+                  agentAvatar: (meta.avatar as string) || "",
+                  content: evt.description || "Task completed",
+                  createdAt: startEvt?.created_at || evt.created_at,
+                  metadata: {
+                    model_tier: (meta.model as string) || "sonnet",
+                    agent_role: (meta.role as string) || "Subagent",
+                  },
+                  activityStatus: {
+                    phase: "complete",
+                    agentId: evt.agent_id,
+                    durationMs,
+                  },
+                });
+
+                startedMap.delete(evt.agent_id);
+              }
+            }
+
+            // Merge activity messages into existing chat messages by timestamp
+            if (activityMessages.length > 0) {
+              const currentMessages = messagesRef.current;
+              const merged = [...currentMessages, ...activityMessages];
+              merged.sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              setMessages(merged);
+            }
           }
           break;
         }
