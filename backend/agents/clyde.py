@@ -69,6 +69,8 @@ _AUTO_ALLOW_TOOLS = {
     "update_workflow", "delete_workflow", "assign_workflow",
     # Phase 11: Gemini Subagent
     "gemini_task",
+    # Phase 12: OpenAI Subagent
+    "openai_task",
 }
 
 
@@ -341,9 +343,11 @@ class ClydeChatManager:
         agents: dict[str, AgentDefinition] = {}
         for agent in registry.get("agents", []):
             if agent.get("status") == "active":
-                # Skip Gemini agents — they're invoked via gemini_task tool,
-                # not the Claude Agent SDK's Task delegation.
-                if agent.get("platform", "claude") == "gemini":
+                # Skip non-Claude agents — they're invoked via their own
+                # tools (gemini_task, openai_task), not the Claude Agent
+                # SDK's Task delegation.
+                agent_platform = agent.get("platform", "claude")
+                if agent_platform in ("gemini", "openai"):
                     continue
 
                 prompt = self._load_agent_prompt(agent.get("system_prompt_path", ""))

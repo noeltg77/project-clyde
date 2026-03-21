@@ -18,6 +18,9 @@ const borderColors: Record<AgentModel, string> = {
   "gemini-pro": "border-[#4285F4]",
   "gemini-flash": "border-[#FBBC04]",
   "gemini-lite": "border-[#34A853]",
+  "openai-full": "border-[#10A37F]",
+  "openai-mini": "border-[#10A37F]",
+  "openai-nano": "border-[#10A37F]",
 };
 
 export function AgentAvatar({

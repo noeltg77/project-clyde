@@ -56,6 +56,20 @@ GEMINI_PRICING: dict[str, tuple[float, float]] = {
 # Pro pricing for prompts exceeding 200k tokens
 GEMINI_PRO_LONG_CONTEXT_PRICING: tuple[float, float] = (4.0, 18.0)
 
+# Maps OpenAI tier names to API model IDs
+OPENAI_MODEL_ID_MAP: dict[str, str] = {
+    "openai-full": "gpt-5.4",
+    "openai-mini": "gpt-5.4-mini",
+    "openai-nano": "gpt-5.4-nano",
+}
+
+# OpenAI pricing per 1M tokens: (input_usd, output_usd)
+OPENAI_PRICING: dict[str, tuple[float, float]] = {
+    "gpt-5.4": (2.50, 15.0),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
+}
+
 # In-memory cache (TTL-based, invalidated on save)
 _settings_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL = 5.0  # seconds

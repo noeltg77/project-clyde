@@ -443,6 +443,7 @@ async def get_cost_summary() -> dict:
             "cost_usd": round(cost_usd, 4),
             "claude": round(platform_split.get("claude", 0.0), 4),
             "gemini": round(platform_split.get("gemini", 0.0), 4),
+            "openai": round(platform_split.get("openai", 0.0), 4),
         })
 
     return {

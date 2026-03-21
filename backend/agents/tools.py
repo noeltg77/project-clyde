@@ -36,9 +36,10 @@ from services.registry import (
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
-from services.settings import load_settings, GEMINI_MODEL_ID_MAP
+from services.settings import load_settings, GEMINI_MODEL_ID_MAP, OPENAI_MODEL_ID_MAP
 from services.supabase_client import search_messages, save_message, save_activity_event
 from services.gemini_client import call_gemini
+from services.openai_client import call_openai
 
 # Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
@@ -3062,6 +3063,198 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Gemini task failed: {str(e)}")
 
 
+# ─── Phase 12: OpenAI Subagent ─────────────────────────────────────
+
+_openai_logger = logging.getLogger("services.openai_client")
+
+
+@tool(
+    "openai_task",
+    "Delegate a task to an OpenAI-powered subagent. The subagent runs prompt-in/text-out "
+    "with no tool access. Use this tool when the target agent's platform is 'openai'. "
+    "After receiving the response, you (Clyde) should handle any file operations "
+    "(Write, Edit, etc.) with the returned content.",
+    {
+        "agent_name": str,
+        "task": str,
+    },
+)
+async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delegate a task to an OpenAI subagent and return the response."""
+    try:
+        agent_name = args.get("agent_name", "").strip()
+        task = args.get("task", "").strip()
+
+        if not agent_name:
+            return _error_response("agent_name is required.")
+        if not task:
+            return _error_response("task is required.")
+
+        # Look up agent in registry
+        agent = get_agent_by_name(_working_dir, agent_name)
+        if not agent:
+            return _error_response(f"Agent '{agent_name}' not found in registry.")
+
+        # Validate this is an OpenAI agent
+        platform = agent.get("platform", "claude")
+        if platform != "openai":
+            return _error_response(
+                f"Agent '{agent_name}' is a {platform} agent, not OpenAI. "
+                f"Use the Task tool for Claude agents or gemini_task for Gemini agents."
+            )
+
+        # Resolve model ID
+        model_tier = agent.get("model", "openai-mini")
+        model_id = OPENAI_MODEL_ID_MAP.get(model_tier)
+        if not model_id:
+            return _error_response(
+                f"Unknown OpenAI model tier '{model_tier}'. "
+                f"Valid tiers: {', '.join(OPENAI_MODEL_ID_MAP.keys())}"
+            )
+
+        # Load system prompt
+        prompt_path = agent.get("system_prompt_path", "")
+        system_prompt = ""
+        if prompt_path:
+            abs_path = os.path.join(_working_dir, prompt_path.lstrip("/"))
+            if os.path.exists(abs_path):
+                with open(abs_path, "r") as f:
+                    system_prompt = f.read()
+
+        # Append agent memory if available
+        memory_path = agent.get("memory_path", "")
+        if memory_path:
+            abs_mem = os.path.join(_working_dir, memory_path.lstrip("/"))
+            if os.path.exists(abs_mem):
+                with open(abs_mem, "r") as f:
+                    memory_content = f.read().strip()
+                if memory_content:
+                    system_prompt += (
+                        "\n\n## Your Memory (Accumulated Knowledge)\n\n"
+                        "The following is your accumulated knowledge from previous tasks. "
+                        "Use this context to inform your current work.\n\n"
+                        f"{memory_content}"
+                    )
+
+        # Emit "started" activity event to frontend
+        agent_display_name = agent.get("name", agent_name)
+        agent_registry_id = agent.get("id", "")
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "started",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "role": agent.get("role", "OpenAI Subagent"),
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist started event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="started",
+                    description="OpenAI agent started",
+                    metadata={"platform": "openai", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Call OpenAI API
+        result = await call_openai(
+            model=model_id,
+            system_prompt=system_prompt,
+            user_prompt=task,
+        )
+
+        # Emit "stopped" activity event to frontend
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "stopped",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist stopped event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="stopped",
+                    description="OpenAI agent stopped",
+                    metadata={"platform": "openai", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Save cost record to Supabase for cost tracking
+        _openai_logger.info(
+            f"[OPENAI] Cost tracking: session_id={_session_id!r}, "
+            f"cost=${result['cost_usd']:.6f}"
+        )
+        if _session_id:
+            try:
+                await save_message(
+                    session_id=_session_id,
+                    role="agent",
+                    content=result["content"][:500],
+                    agent_name=agent.get("name", agent_name),
+                    token_count=result["input_tokens"] + result["output_tokens"],
+                    cost_usd=result["cost_usd"],
+                    metadata={
+                        "platform": "openai",
+                        "model": result["model"],
+                        "model_tier": model_tier,
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                    },
+                )
+                _openai_logger.info("[OPENAI] Cost record saved successfully")
+            except Exception as e:
+                _openai_logger.error(f"[OPENAI] Failed to save cost record: {e}", exc_info=True)
+        else:
+            _openai_logger.warning("[OPENAI] No session_id — cost record NOT saved")
+
+        # Return response to Clyde
+        return _text_response(
+            f"**{agent.get('name', agent_name)}** ({model_tier}) responded:\n\n"
+            f"{result['content']}\n\n"
+            f"---\n"
+            f"Tokens: {result['input_tokens']} in / {result['output_tokens']} out | "
+            f"Cost: ${result['cost_usd']:.6f}"
+        )
+
+    except Exception as e:
+        return _error_response(f"OpenAI task failed: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -3137,5 +3330,7 @@ registry_mcp_server = create_sdk_mcp_server(
         assign_workflow_tool,
         # Phase 11: Gemini Subagent
         gemini_task_tool,
+        # Phase 12: OpenAI Subagent
+        openai_task_tool,
     ],
 )

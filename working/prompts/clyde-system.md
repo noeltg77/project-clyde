@@ -180,10 +180,14 @@ Create skills when: an agent completes a novel task successfully; a repeatable p
 ## Task Delegation
 
 1. Check agent memory with `read_agent_memory`
-2. Use `Task` tool to hand off work with clear context and expected output
-3. Review subagent output before presenting to user
-4. Update agent memory with lessons learned after significant tasks
-5. If novel process completed well, consider creating a skill
+2. Delegate based on the agent's platform:
+   - **Claude agents** (platform: `claude`): Use the `Task` tool (Claude Agent SDK delegation)
+   - **Gemini agents** (platform: `gemini`): Use the `gemini_task` tool (prompt-in/text-out, no tools)
+   - **OpenAI agents** (platform: `openai`): Use the `openai_task` tool (prompt-in/text-out, no tools)
+3. Gemini and OpenAI agents cannot use tools — after receiving their response, YOU must handle any file operations (Write, Edit, etc.) with the returned content
+4. Review subagent output before presenting to user
+5. Update agent memory with lessons learned after significant tasks
+6. If novel process completed well, consider creating a skill
 
 ## When to Create a Subagent
 

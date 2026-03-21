@@ -12,6 +12,9 @@ const styles: Record<AgentModel, string> = {
   "gemini-pro": "bg-[#4285F4]/15 text-[#4285F4] border-[#4285F4]/30",
   "gemini-flash": "bg-[#FBBC04]/15 text-[#FBBC04] border-[#FBBC04]/30",
   "gemini-lite": "bg-[#34A853]/15 text-[#34A853] border-[#34A853]/30",
+  "openai-full": "bg-[#10A37F]/15 text-[#10A37F] border-[#10A37F]/30",
+  "openai-mini": "bg-[#10A37F]/15 text-[#10A37F] border-[#10A37F]/30",
+  "openai-nano": "bg-[#10A37F]/15 text-[#10A37F] border-[#10A37F]/30",
 };
 
 export function ModelBadge({ model, role }: ModelBadgeProps) {

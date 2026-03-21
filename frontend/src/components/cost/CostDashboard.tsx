@@ -34,17 +34,20 @@ type CostData = {
     cost_usd: number;
     claude?: number;
     gemini?: number;
+    openai?: number;
   }[];
 };
 
 const PLATFORM_COLOURS: Record<string, string> = {
   claude: "#C8FF00",
   gemini: "#4285F4",
+  openai: "#10A37F",
 };
 
 const PLATFORM_LABELS: Record<string, string> = {
   claude: "Anthropic",
   gemini: "Gemini",
+  openai: "OpenAI",
 };
 
 export function CostDashboard() {
@@ -96,9 +99,11 @@ export function CostDashboard() {
     );
   }
 
-  // Determine if we have any gemini data for the stacked chart
-  const hasGemini = data.daily_breakdown.some((d) => (d.gemini ?? 0) > 0);
+  // Determine which platforms have data for the stacked chart
   const hasClaude = data.daily_breakdown.some((d) => (d.claude ?? 0) > 0);
+  const hasGemini = data.daily_breakdown.some((d) => (d.gemini ?? 0) > 0);
+  const hasOpenAI = data.daily_breakdown.some((d) => (d.openai ?? 0) > 0);
+  const hasAnyPlatform = hasClaude || hasGemini || hasOpenAI;
 
   // Format daily chart data — show short day labels
   const chartData = data.daily_breakdown.map((d) => {
@@ -111,6 +116,7 @@ export function CostDashboard() {
       cost: d.cost_usd,
       claude: d.claude ?? 0,
       gemini: d.gemini ?? 0,
+      openai: d.openai ?? 0,
     };
   });
 
@@ -218,7 +224,7 @@ export function CostDashboard() {
                     ]}
                     labelStyle={{ color: "rgba(255,255,255,0.5)" }}
                   />
-                  {(hasClaude || hasGemini) && (
+                  {hasAnyPlatform && (
                     <Legend
                       formatter={(value: string) =>
                         PLATFORM_LABELS[value] ?? value
@@ -231,7 +237,7 @@ export function CostDashboard() {
                       dataKey="claude"
                       stackId="platform"
                       fill={PLATFORM_COLOURS.claude}
-                      radius={hasGemini ? [0, 0, 0, 0] : [2, 2, 0, 0]}
+                      radius={[0, 0, 0, 0]}
                       maxBarSize={36}
                     />
                   )}
@@ -240,12 +246,21 @@ export function CostDashboard() {
                       dataKey="gemini"
                       stackId="platform"
                       fill={PLATFORM_COLOURS.gemini}
+                      radius={[0, 0, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
+                  {hasOpenAI && (
+                    <Bar
+                      dataKey="openai"
+                      stackId="platform"
+                      fill={PLATFORM_COLOURS.openai}
                       radius={[2, 2, 0, 0]}
                       maxBarSize={36}
                     />
                   )}
                   {/* Fallback if no platform data yet — show total */}
-                  {!hasClaude && !hasGemini && (
+                  {!hasAnyPlatform && (
                     <Bar
                       dataKey="cost"
                       fill="#C8FF00"
