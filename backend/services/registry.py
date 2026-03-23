@@ -132,7 +132,7 @@ def _bootstrap_teams(working_dir: str) -> None:
                 "memory_path": "/working/memory/clyde-memory.md",
                 "self_edit_enabled": True,
                 "status": "active",
-                "skills": ["Skill creator"],
+                "skills": ["Skill creator", "Visualisation"],
                 "tools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
             },
             "teams": [

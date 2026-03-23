@@ -14,6 +14,24 @@ export type AgentActivityStatus = {
   durationMs?: number;
 };
 
+export type VisualizationData = {
+  id: string;
+  title: string;
+  htmlContent: string;
+  description?: string;
+};
+
+export type VisualConfig = {
+  id: string;
+  title: string;
+  mode: "chart" | "code";
+  chartType?: string;
+  data?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+  code?: string;
+  description?: string;
+};
+
 export type Message = {
   id: string;
   sessionId: string;
@@ -29,6 +47,8 @@ export type Message = {
   steps?: MessageStep[];
   debugPrompts?: { systemPrompt: string; userMessage: string };
   activityStatus?: AgentActivityStatus;
+  visualizations?: VisualizationData[];
+  visuals?: VisualConfig[];
 };
 
 export type SessionSummary = {
@@ -58,6 +78,8 @@ export type ChatActions = {
   updateMessage: (id: string, partial: Partial<Message>) => void;
   appendToMessage: (id: string, textDelta: string) => void;
   addStepToMessage: (id: string, step: MessageStep) => void;
+  addVisualizationToMessage: (id: string, viz: VisualizationData) => void;
+  addVisualToMessage: (id: string, vis: VisualConfig) => void;
   setConnected: (connected: boolean) => void;
   setInitialLoadDone: () => void;
   setStreaming: (streaming: boolean) => void;
@@ -104,6 +126,22 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
         messages: state.messages.map((m) =>
           m.id === id
             ? { ...m, steps: [...(m.steps || []), step] }
+            : m
+        ),
+      })),
+    addVisualizationToMessage: (id, viz) =>
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === id
+            ? { ...m, visualizations: [...(m.visualizations || []), viz] }
+            : m
+        ),
+      })),
+    addVisualToMessage: (id, vis) =>
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === id
+            ? { ...m, visuals: [...(m.visuals || []), vis] }
             : m
         ),
       })),

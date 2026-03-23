@@ -8,6 +8,8 @@ import { useSettingsStore } from "@/stores/settings-store-provider";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
 import { FileAttachmentCard } from "./FileAttachmentCard";
+import { VisualizationBlock } from "./VisualizationBlock";
+import { VisualBlock } from "./VisualBlock";
 import type { Message, MessageStep } from "@/stores/chat-store";
 
 const API_URL =
@@ -344,6 +346,21 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
             </div>
           </div>
         </div>
+        {/* Visualization blocks — rendered outside the text bubble for max width */}
+        {message.visualizations && message.visualizations.length > 0 && !message.isStreaming && (
+          <div className="mt-3 space-y-3">
+            {message.visualizations.map((viz) => (
+              <VisualizationBlock key={viz.id} visualization={viz} />
+            ))}
+          </div>
+        )}
+        {message.visuals && message.visuals.length > 0 && !message.isStreaming && (
+          <div className="mt-3 space-y-3">
+            {message.visuals.map((vis) => (
+              <VisualBlock key={vis.id} visual={vis} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -71,6 +71,8 @@ _AUTO_ALLOW_TOOLS = {
     "gemini_task",
     # Phase 12: OpenAI Subagent
     "openai_task",
+    # Phase 13: Visualizations
+    "create_visualisation", "create_visual",
 }
 
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chat-store-provider";
+import type { VisualizationData, VisualConfig } from "@/stores/chat-store";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import type { Agent } from "@/stores/agent-store";
 import { useInsightStore } from "@/stores/insight-store-provider";
@@ -37,6 +38,8 @@ export function ChatContainer() {
   const setSessions = useChatStore((s) => s.setSessions);
   const addSession = useChatStore((s) => s.addSession);
   const updateSessionTitle = useChatStore((s) => s.updateSessionTitle);
+  const addVisualizationToMessage = useChatStore((s) => s.addVisualizationToMessage);
+  const addVisualToMessage = useChatStore((s) => s.addVisualToMessage);
 
   // Agent store state + actions
   const agents = useAgentStore((s) => s.agents);
@@ -152,6 +155,8 @@ export function ChatContainer() {
               // Extract persisted steps from metadata
               const meta = m.metadata || {};
               const steps = (meta.steps as MessageStep[] | undefined) || undefined;
+              const visualizations = (meta.visualizations as VisualizationData[] | undefined) || undefined;
+              const visuals = (meta.visuals as VisualConfig[] | undefined) || undefined;
               return {
                 id: m.id,
                 sessionId: m.session_id,
@@ -162,6 +167,8 @@ export function ChatContainer() {
                 metadata: meta,
                 createdAt: m.created_at,
                 steps,
+                visualizations,
+                visuals,
               };
             });
             messagesRef.current = formatted;
@@ -637,6 +644,36 @@ export function ChatContainer() {
           }
           break;
         }
+
+        case "visualization": {
+          const vizTarget = streamingMsgId.current || lastAgentMsgId.current;
+          if (vizTarget) {
+            addVisualizationToMessage(vizTarget, {
+              id: msg.data.vis_id as string,
+              title: msg.data.title as string,
+              htmlContent: msg.data.html_content as string,
+              description: (msg.data.description as string) || undefined,
+            });
+          }
+          break;
+        }
+
+        case "visual": {
+          const visualTarget = streamingMsgId.current || lastAgentMsgId.current;
+          if (visualTarget) {
+            addVisualToMessage(visualTarget, {
+              id: msg.data.vis_id as string,
+              title: msg.data.title as string,
+              mode: msg.data.mode as "chart" | "code",
+              chartType: (msg.data.chart_type as string) || undefined,
+              data: (msg.data.data as Record<string, unknown>) || undefined,
+              options: (msg.data.options as Record<string, unknown>) || undefined,
+              code: (msg.data.code as string) || undefined,
+              description: (msg.data.description as string) || undefined,
+            });
+          }
+          break;
+        }
       }
     },
     [
@@ -664,6 +701,8 @@ export function ChatContainer() {
       addColumnToStore,
       updateColumnInStore,
       removeColumnFromStore,
+      addVisualizationToMessage,
+      addVisualToMessage,
     ]
   );
 

@@ -23,7 +23,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from agents.clyde import ClydeChatManager
-from agents.tools import update_session_context
+from agents.tools import (
+    update_session_context,
+    get_and_clear_pending_visualizations,
+    get_and_clear_pending_visuals,
+)
 from services.supabase_client import (
     create_session,
     save_message,
@@ -2370,11 +2374,19 @@ async def chat_websocket(ws: WebSocket):
                     except Exception:
                         clyde_embedding = None
 
+                    # Collect any pending visualisations produced during this response
+                    pending_viz = get_and_clear_pending_visualizations()
+                    pending_vis = get_and_clear_pending_visuals()
+
                     if len(response_blocks) <= 1:
                         # Single block — save as before (one message)
                         msg_metadata: dict = {"model": clyde_model}
                         if all_steps:
                             msg_metadata["steps"] = all_steps
+                        if pending_viz:
+                            msg_metadata["visualizations"] = pending_viz
+                        if pending_vis:
+                            msg_metadata["visuals"] = pending_vis
                         await save_message(
                             session_id=session_id,
                             role="clyde",
@@ -2395,6 +2407,12 @@ async def chat_websocket(ws: WebSocket):
                             block_steps = all_steps[block["steps_start"]:block["steps_end"]]
                             if block_steps:
                                 block_meta["steps"] = block_steps
+                            # Attach visualisations to the last block
+                            if is_last:
+                                if pending_viz:
+                                    block_meta["visualizations"] = pending_viz
+                                if pending_vis:
+                                    block_meta["visuals"] = pending_vis
                             await save_message(
                                 session_id=session_id,
                                 role="clyde",

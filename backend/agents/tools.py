@@ -8,6 +8,7 @@ search chat history, manage agent memory, and handle skills.
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,26 @@ from services.openai_client import call_openai
 _working_dir: str = ""
 _session_id: str = ""
 _ws: Any = None  # WebSocket for pushing activity events to the frontend
+
+# Phase 13: Visualisation — pending payloads accumulated during a response
+_pending_visualizations: list[dict] = []
+_pending_visuals: list[dict] = []
+
+
+def get_and_clear_pending_visualizations() -> list[dict]:
+    """Return and clear all pending legacy visualisation payloads."""
+    global _pending_visualizations
+    result = list(_pending_visualizations)
+    _pending_visualizations.clear()
+    return result
+
+
+def get_and_clear_pending_visuals() -> list[dict]:
+    """Return and clear all pending container-based visual payloads."""
+    global _pending_visuals
+    result = list(_pending_visuals)
+    _pending_visuals.clear()
+    return result
 
 
 def init_tools(working_dir: str) -> None:
@@ -3285,6 +3306,184 @@ async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"OpenAI task failed: {str(e)}")
 
 
+# ─── Visualisation Tools (Phase 13) ──────────────────────────────
+
+
+@tool(
+    "create_visualisation",
+    "Render arbitrary self-contained HTML/SVG content as an inline visualisation in the "
+    "chat. Use this for complex custom layouts, full HTML pages, or intricate SVG graphics "
+    "that require complete control over the markup. For standard charts, prefer create_visual "
+    "instead. The content renders in a sandboxed iframe with a dark theme background. "
+    "Maximum 50,000 characters.",
+    {
+        "title": str,
+        "html_content": str,
+        "description": str,
+    },
+)
+async def create_visualisation_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a legacy HTML/SVG visualisation rendered in a sandboxed iframe."""
+    global _pending_visualizations
+    try:
+        title = args.get("title", "").strip()
+        html_content = args.get("html_content", "").strip()
+        description = args.get("description", "").strip()
+
+        if not title:
+            return _error_response("title is required.")
+        if not html_content:
+            return _error_response("html_content is required.")
+        if len(html_content) > 50_000:
+            return _error_response(
+                f"html_content is {len(html_content)} chars — maximum is 50,000."
+            )
+
+        vis_id = str(uuid.uuid4())
+        payload: dict[str, Any] = {
+            "vis_id": vis_id,
+            "title": title,
+            "html_content": html_content,
+        }
+        if description:
+            payload["description"] = description
+
+        _pending_visualizations.append(payload)
+
+        # Push to frontend immediately via WebSocket
+        if _ws:
+            try:
+                await _ws.send_json({"type": "visualization", "data": payload})
+            except Exception:
+                pass  # WebSocket may be closed; visualisation is still persisted
+
+        return _text_response(
+            f"Visualisation **{title}** rendered successfully (id: `{vis_id}`)."
+        )
+
+    except Exception as e:
+        return _error_response(f"create_visualisation failed: {str(e)}")
+
+
+@tool(
+    "create_visual",
+    "Create an inline data visualisation in the chat using either Chart.js (chart mode) "
+    "or custom JavaScript (code mode). This is the preferred tool for creating visual "
+    "content.\n\n"
+    "**Chart mode** (`mode: \"chart\"`): Provide a Chart.js chart type and data/options "
+    "objects. Supported types: bar, line, pie, doughnut, scatter, radar, polarArea, bubble.\n\n"
+    "**Code mode** (`mode: \"code\"`): Write JavaScript that runs in a container with "
+    "pre-loaded globals: canvas, ctx, svg, root, THEME, Chart, plus helpers svgEl(), "
+    "svgText(), resizeCanvas(). Use this for custom diagrams, flowcharts, interactive "
+    "SVG, or anything beyond standard charts.\n\n"
+    "The THEME object provides dark palette colours: accent (#6366f1 indigo), "
+    "secondary (#22d3ee cyan), tertiary (#f97316 orange), plus a palette[] array of 8 "
+    "colours. Always use THEME colours for consistency.",
+    {
+        "title": str,
+        "mode": str,
+        "chart_type": str,
+        "data": str,
+        "options": str,
+        "code": str,
+        "description": str,
+    },
+)
+async def create_visual_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a container-based visualisation (Chart.js chart or custom JS code)."""
+    global _pending_visuals
+    try:
+        title = args.get("title", "").strip()
+        mode = args.get("mode", "").strip().lower()
+        description = args.get("description", "").strip()
+
+        if not title:
+            return _error_response("title is required.")
+        if mode not in ("chart", "code"):
+            return _error_response("mode must be 'chart' or 'code'.")
+
+        vis_id = str(uuid.uuid4())
+        payload: dict[str, Any] = {
+            "vis_id": vis_id,
+            "title": title,
+            "mode": mode,
+        }
+        if description:
+            payload["description"] = description
+
+        if mode == "chart":
+            chart_type = args.get("chart_type", "").strip().lower()
+            data_raw = args.get("data", "")
+            options_raw = args.get("options", "")
+
+            valid_types = {
+                "bar", "line", "pie", "doughnut", "scatter",
+                "radar", "polarArea", "bubble",
+            }
+            if chart_type not in valid_types:
+                return _error_response(
+                    f"chart_type must be one of: {', '.join(sorted(valid_types))}."
+                )
+
+            # Parse data JSON
+            if isinstance(data_raw, str):
+                try:
+                    data_obj = json.loads(data_raw) if data_raw else {}
+                except json.JSONDecodeError as e:
+                    return _error_response(f"data is not valid JSON: {e}")
+            else:
+                data_obj = data_raw or {}
+
+            # Parse options JSON (optional)
+            options_obj = {}
+            if options_raw:
+                if isinstance(options_raw, str):
+                    try:
+                        options_obj = json.loads(options_raw)
+                    except json.JSONDecodeError as e:
+                        return _error_response(f"options is not valid JSON: {e}")
+                else:
+                    options_obj = options_raw
+
+            # Size guard
+            combined = json.dumps(data_obj) + json.dumps(options_obj)
+            if len(combined) > 20_000:
+                return _error_response(
+                    f"Chart data + options is {len(combined)} chars — maximum is 20,000."
+                )
+
+            payload["chart_type"] = chart_type
+            payload["data"] = data_obj
+            if options_obj:
+                payload["options"] = options_obj
+
+        elif mode == "code":
+            code = args.get("code", "").strip()
+            if not code:
+                return _error_response("code is required in code mode.")
+            if len(code) > 30_000:
+                return _error_response(
+                    f"code is {len(code)} chars — maximum is 30,000."
+                )
+            payload["code"] = code
+
+        _pending_visuals.append(payload)
+
+        # Push to frontend immediately via WebSocket
+        if _ws:
+            try:
+                await _ws.send_json({"type": "visual", "data": payload})
+            except Exception:
+                pass
+
+        return _text_response(
+            f"Visual **{title}** ({mode} mode) rendered successfully (id: `{vis_id}`)."
+        )
+
+    except Exception as e:
+        return _error_response(f"create_visual failed: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -3362,5 +3561,8 @@ registry_mcp_server = create_sdk_mcp_server(
         gemini_task_tool,
         # Phase 12: OpenAI Subagent
         openai_task_tool,
+        # Phase 13: Visualizations
+        create_visualisation_tool,
+        create_visual_tool,
     ],
 )
