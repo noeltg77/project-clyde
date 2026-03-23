@@ -203,6 +203,7 @@ export function ActiveAgentOverlay() {
           registryId: id,
           name: meta?.name || id,
           role: meta?.role || "Subagent",
+          platform: "claude",
           model: meta?.model || "sonnet",
           avatar: meta?.avatar || "",
           status: "active",

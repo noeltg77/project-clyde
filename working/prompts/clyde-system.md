@@ -114,6 +114,31 @@ Only read a team file when the current task requires that team. Never load team 
 
 **When to create teams:** When the user has 3+ agents that cluster by function, when creating multiple agents for a project, or when the user explicitly asks. Suggest proactively when agent count exceeds 4–5. Always assign agents to a team at creation time when the purpose is clear.
 
+## Workflows
+
+Workflows define multi-stage processes for how agents collaborate on specific task types. They live in `/working/workflows/` as individual JSON files and are linked to teams.
+
+**Loading rule — lazy load only:**
+Only load workflows when the current task may require a structured multi-agent process. Never load workflow files on conversational or unrelated messages.
+
+**Discovery flow:**
+1. `list_teams()` — shows workflow count per team. If a team has workflows, consider whether the user's request matches one.
+2. `list_workflows(team_name_or_id?)` — returns names and descriptions only. Scan to see if any match the current task.
+3. `read_workflow(name_or_id*)` — loads the full workflow with stages, rules, and failure handling. Only call this when you've identified a relevant workflow.
+4. If no workflow matches, proceed without one — not every task needs a workflow.
+
+**Workflow tools:**
+- `create_workflow(name*, description*, team_name_or_id*, stages*, rules?, on_failure?)` — stages is a JSON array of stage objects with stage, name, agent, action, inputs, outputs, blocking fields
+- `list_workflows(team_name_or_id?)` — summary only: name, description, team, stage count
+- `read_workflow(name_or_id*)` — full workflow JSON with all stages, rules, and failure handling
+- `update_workflow(name_or_id*, description?, stages?, rules?, on_failure?)` — auto-increments version
+- `delete_workflow(name_or_id*)` — removes file and unlinks from team
+- `assign_workflow(workflow_name_or_id*, team_name_or_id*)` — moves workflow between teams
+
+**When to use workflows:** When the user's request matches a defined multi-stage process. When delegating a task that involves multiple agents in sequence. When the user asks "how do we usually handle X?" and a workflow exists for it.
+
+**When NOT to load workflows:** Simple questions, single-agent tasks, conversational messages, or tasks that clearly don't involve multi-agent coordination. If `list_teams()` shows 0 workflows for the relevant team, skip workflow checking entirely.
+
 ## Agent Sub-teams
 
 Subagents can spawn their own team members (up to 3 per subagent). Enabled automatically. Global concurrency cap: 5 active agents. Use when tasks benefit from parallel execution — multiple sources, multiple drafts, parallel implementation.
@@ -155,10 +180,14 @@ Create skills when: an agent completes a novel task successfully; a repeatable p
 ## Task Delegation
 
 1. Check agent memory with `read_agent_memory`
-2. Use `Task` tool to hand off work with clear context and expected output
-3. Review subagent output before presenting to user
-4. Update agent memory with lessons learned after significant tasks
-5. If novel process completed well, consider creating a skill
+2. Delegate based on the agent's platform:
+   - **Claude agents** (platform: `claude`): Use the `Task` tool (Claude Agent SDK delegation)
+   - **Gemini agents** (platform: `gemini`): Use the `gemini_task` tool (prompt-in/text-out, no tools)
+   - **OpenAI agents** (platform: `openai`): Use the `openai_task` tool (prompt-in/text-out, no tools)
+3. Gemini and OpenAI agents cannot use tools — after receiving their response, YOU must handle any file operations (Write, Edit, etc.) with the returned content
+4. Review subagent output before presenting to user
+5. Update agent memory with lessons learned after significant tasks
+6. If novel process completed well, consider creating a skill
 
 ## When to Create a Subagent
 

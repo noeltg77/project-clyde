@@ -1,52 +1,79 @@
-# Project Clyde
+<p align="center">
+  <img src="docs/images/clyde-banner.png" alt="Project Clyde — Clyde Corp HQ" width="100%" />
+</p>
 
-A multi-agent AI system built on the Claude Agent SDK. Clyde is your personal AI assistant that can delegate tasks to specialised sub-agents, remember past conversations, and improve its own prompts over time.
+<h1 align="center">Project Clyde — Early Access</h1>
 
----
+<p align="center">
+  <strong>Your personal AI workforce, powered by the Claude Agent SDK.</strong><br/>
+  Multi-agent system with delegated sub-agents, persistent memory, and self-improving prompts.
+</p>
 
-## Features
-
-- **Multi-agent chat** — Clyde orchestrates a team of specialised sub-agents, delegating work and streaming responses in real time
-- **Org chart** — Visualise the agent hierarchy with live status indicators
-- **Skills dashboard** — Browse and manage agent capabilities
-- **File browser** — Explore the working directory, upload files, and reference them in chat with `@`
-- **Task board (Kanban)** — Drag-and-drop kanban board with customisable columns (Draft, Not Started, In Progress, Complete). Create tasks manually or let Clyde generate them during chat. Assign tasks to agents or yourself, link documents, and watch the board update live as work progresses
-- **Cost tracking** — Per-agent cost breakdown with daily, weekly, and monthly aggregates
-- **Schedules & triggers** — Automate agent runs with cron schedules or file-watch triggers
-- **Performance analytics** — Track agent response times and success rates
-- **Proactive insights** — Automated analysis that surfaces recommendations and optimisation opportunities
-- **System prompt management** — Version-controlled prompt editing with rollback support
-- **Global search** — Vector similarity search across all conversations (Cmd+K)
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Claude_Agent_SDK-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Agent SDK" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" />
+</p>
 
 ---
 
-## Quick Start
+## What is Project Clyde?
 
-```bash
-git clone https://github.com/noeltg77/Project-Clyde-EA.git
-cd Project-Clyde-EA
-npm run clyde
+Clyde is a multi-agent AI system where a lead agent delegates tasks to specialised sub-agents, remembers past conversations, and improves its own prompts over time. Think of it as a virtual AI team that works for you.
+
+The Early Access build includes a CLI setup wizard that handles everything — credentials, database deployment, dependencies, and launch — so you can go from clone to running in under five minutes.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| **Agent Delegation** | Lead agent routes tasks to specialised sub-agents automatically |
+| **Persistent Memory** | Conversations are stored with vector embeddings for semantic recall |
+| **Self-Improving Prompts** | Agents refine their own system prompts over time |
+| **Activity Feed** | Real-time visibility into what each agent is doing |
+| **Permission System** | Approve or deny tool use before agents act |
+| **Org Chart** | Visual agent hierarchy with live status indicators and team grouping |
+| **Skills Dashboard** | Create and assign prompt extensions to agents, lazy-loaded for efficiency |
+| **Task Board (Kanban)** | Drag-and-drop board with columns, agent assignment, and document linking |
+| **File Browser** | Explore the working directory, upload files, and reference them in chat with `@` |
+| **Cost Tracking** | Per-agent cost breakdown with daily, weekly, and monthly aggregates |
+| **Schedules & Triggers** | Cron-based automation and file-watch triggers for hands-off agent runs |
+| **Performance Analytics** | Track agent response times and success rates with charts |
+| **Proactive Insights** | Automated analysis that surfaces recommendations and optimisations |
+| **APIs & Webhooks** | Full CRUD integration manager — assign external APIs to agents |
+| **Workflows** | Team-scoped, multi-stage processes stored as JSON definitions |
+| **Global Search (Cmd+K)** | Vector similarity search across all conversations |
+| **Debug Mode** | Collapsible prompt viewer showing system prompts and agent instructions |
+| **Cost-Saving Mode** | CLI toggle to default to Sonnet/Haiku for lower-cost operation |
+| **Brutalist UI** | Dark theme with acid-green accents — built different |
+
+---
+
+## Tech Stack
+
+```
+Frontend     Next.js 16  ·  React 19  ·  Tailwind v4  ·  Zustand  ·  Motion  ·  Recharts
+Backend      FastAPI  ·  Claude Agent SDK  ·  Supabase  ·  OpenAI  ·  APScheduler
+Infra        WebSocket (real-time)  ·  Vector search (pgvector)  ·  File watchers
+CLI          Node.js  ·  Interactive setup wizard  ·  Secure credential input
 ```
 
-That's it. On first run, the CLI walks you through everything — credentials, database setup, dependency installation — then starts the app and opens your browser.
-
-Every run after that just launches the app.
-
 ---
 
-## What You'll Need
+## Prerequisites
 
-### Prerequisites
-
-| Requirement | Version | How to check |
+| Requirement | Version | Check |
 |---|---|---|
-| **Node.js** | 20 or higher | Run `node --version` in your terminal |
-| **Python** | 3.10 or higher | Run `python3 --version` in your terminal |
-| **Git** | Any recent version | Run `git --version` in your terminal |
+| **Node.js** | 20+ | `node --version` |
+| **Python** | 3.10+ | `python3 --version` |
+| **Git** | Any recent | `git --version` |
 
 The CLI checks these automatically and will let you know if anything is missing.
 
-### Accounts (all have free tiers)
+You'll also need accounts (all have free tiers):
 
 | Service | What it's for | Where to sign up |
 |---|---|---|
@@ -54,9 +81,45 @@ The CLI checks these automatically and will let you know if anything is missing.
 | **Anthropic** | AI agents | [console.anthropic.com](https://console.anthropic.com) |
 | **OpenAI** | Message search / embeddings | [platform.openai.com](https://platform.openai.com) |
 
-### Before you run `npm run clyde`
+---
 
-Have these ready — the setup wizard will ask for them:
+## Quick Start
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/noeltg77/Project-Clyde-EA.git
+cd Project-Clyde-EA
+```
+
+### 2. Run the CLI
+
+```bash
+npm run clyde
+```
+
+That's it. On first run, the CLI walks you through everything — credentials, database setup, dependency installation — then starts the app and opens your browser.
+
+Every run after that just launches the app.
+
+### What the Setup Wizard Does
+
+When you run `npm run clyde` for the first time (no `.env.local` file), the CLI will:
+
+1. **Check prerequisites** — verifies Node.js 20+, Python 3.10+, and Git are installed
+2. **Collect credentials** — prompts for your Supabase, Anthropic, and OpenAI keys (passwords are masked)
+3. **Choose cost mode** — toggle between Opus/Sonnet (full power) or Sonnet/Haiku (cost-saving) defaults
+4. **Generate `.env.local`** — writes your config file with all the right values (never committed to git)
+5. **Deploy the database schema** — connects directly to your Supabase Postgres instance and creates all tables, functions, and indexes automatically
+6. **Install dependencies** — runs `npm install` for the frontend and sets up a Python virtual environment with all backend packages
+7. **Create the working directory** — sets up the folder structure for agent configs, prompts, memory, and logs
+8. **Launch the app** — starts both the backend (port 8000) and frontend (port 3020), then opens your browser
+
+All credentials are stored locally in `.env.local` and are never transmitted anywhere except directly to your own services.
+
+### Before You Run — Have These Ready
+
+The setup wizard will ask for:
 
 1. **Supabase Project URL** — looks like `https://abcdefgh.supabase.co` (Dashboard > Settings > API)
 2. **Supabase Anon Key** — a long string starting with `eyJ` (same page)
@@ -66,22 +129,6 @@ Have these ready — the setup wizard will ask for them:
 6. **OpenAI API Key** — starts with `sk-` ([platform.openai.com/api-keys](https://platform.openai.com/api-keys))
 
 > **Tip:** If you haven't created a Supabase project yet, go to [supabase.com](https://supabase.com), click **New Project**, pick a name, set a strong database password (save it!), choose a region, and wait about a minute for it to spin up.
-
----
-
-## What the Setup Wizard Does
-
-When you run `npm run clyde` for the first time (no `.env.local` file), the CLI will:
-
-1. **Check prerequisites** — verifies Node.js 20+, Python 3.10+, and Git are installed
-2. **Collect credentials** — prompts for your Supabase, Anthropic, and OpenAI keys (passwords are masked)
-3. **Generate `.env.local`** — writes your config file with all the right values (never committed to git)
-4. **Deploy the database schema** — connects directly to your Supabase Postgres instance and creates all 8 tables, functions, and indexes automatically
-5. **Install dependencies** — runs `npm install` for the frontend and sets up a Python virtual environment with all backend packages
-6. **Create the working directory** — sets up the folder structure for agent configs, prompts, memory, and logs
-7. **Launch the app** — starts both the backend (port 8000) and frontend (port 3020), then opens your browser
-
-All credentials are stored locally in `.env.local` and are never transmitted anywhere except directly to your own services.
 
 ---
 
@@ -106,30 +153,31 @@ Once all three are green, close settings and create your first chat session.
 npm run clyde
 ```
 
-This starts both the backend and frontend, with color-coded logs in your terminal. Press `Ctrl+C` to stop everything.
+This starts both the backend and frontend, with colour-coded logs in your terminal. Press `Ctrl+C` to stop everything.
 
 You can also run the services individually if you prefer separate terminals:
 
-| Command | What it does |
+| Command | Description |
 |---|---|
 | `npm run clyde` | Start everything (recommended) |
 | `npm run dev:frontend` | Start only the frontend (port 3020) |
 | `npm run dev:backend` | Start only the backend (port 8000) |
-| `npm run lint` | Check frontend code for errors |
+| `npm run lint` | Lint check |
 
 ---
 
 ## Project Structure
 
 ```
-project-clyde/
+Project-Clyde-EA/
 ├── cli/               CLI setup wizard and app launcher
 │   └── clyde.js       Entry point for `npm run clyde`
 ├── db/                Database schema
 │   └── schema.sql     Idempotent SQL (safe to re-run)
 ├── frontend/          Next.js web interface (port 3020)
 ├── backend/           FastAPI server + AI agents (port 8000)
-├── working/           Runtime data (agent registry, prompts, memory)
+├── working/           Runtime data (registry, prompts, memory, workflows)
+├── docs/              Documentation and images
 ├── .env.example       Template for environment variables
 └── .env.local         Your local config (not committed to git)
 ```
@@ -138,10 +186,10 @@ project-clyde/
 
 ## Manual Setup (Alternative)
 
-If you prefer to set things up step by step instead of using the CLI wizard, follow these instructions.
+If you prefer to set things up step by step instead of using the CLI wizard:
 
 <details>
-<summary>Click to expand manual setup steps</summary>
+<summary><strong>Click to expand manual setup steps</strong></summary>
 
 ### 1. Set Up Supabase
 
@@ -175,7 +223,7 @@ BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000
 
 # Working directory — replace with the actual path on YOUR computer
-WORKING_DIR=/full/path/to/project-clyde/working
+WORKING_DIR=/full/path/to/Project-Clyde-EA/working
 ```
 
 To find your full path for `WORKING_DIR`:
@@ -187,71 +235,81 @@ echo "$(pwd)/working"
 ### 3. Install the Frontend
 
 ```bash
-cd frontend
-npm install
+cd frontend && npm install && cd ..
 ```
 
 ### 4. Install the Backend
 
 ```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ..
 ```
 
 ### 5. Start the App
 
 **Terminal 1 — Backend:**
-
 ```bash
-cd backend
-source .venv/bin/activate
-bash run.sh
+cd backend && source .venv/bin/activate && bash run.sh
 ```
 
 **Terminal 2 — Frontend:**
-
 ```bash
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
-Open your browser to **http://localhost:3020**
+Open **http://localhost:3020** and verify all status indicators are green in **Settings**.
 
 </details>
 
 ---
 
-## Common Issues
+## Troubleshooting
 
-### "Cannot connect to backend"
+<details>
+<summary><strong>"Cannot connect to backend"</strong></summary>
+
 Make sure the backend is running. If using `npm run clyde`, check the terminal for backend errors (prefixed with `[backend]` in teal). If running manually, verify you see `Uvicorn running on http://127.0.0.1:8000`.
+</details>
 
-### Database schema deployment failed
+<details>
+<summary><strong>Database schema deployment failed</strong></summary>
+
 - **Connection refused** — check your Supabase URL is correct and the project is active
 - **Password authentication failed** — reset your database password in Supabase Dashboard > Settings > Database
 - **Already exists** — this is fine; the schema is idempotent and safe to re-run
+</details>
 
-### "Module not found" errors in the backend
-If running manually, make sure you activated the virtual environment:
+<details>
+<summary><strong>"Module not found" in backend</strong></summary>
+
+If running manually, activate the virtual environment first:
 ```bash
 source .venv/bin/activate
 ```
 If using `npm run clyde`, the CLI handles this automatically.
+</details>
 
-### "node: command not found" or wrong Node version
-Install Node.js 20+ from [nodejs.org](https://nodejs.org). Pick the LTS version.
+<details>
+<summary><strong>Wrong Node.js version</strong></summary>
 
-### "python3: command not found"
-- **Mac:** Run `brew install python3` (requires [Homebrew](https://brew.sh))
-- **Windows:** Download from [python.org](https://www.python.org/downloads/) and check "Add to PATH" during install
-- **Linux:** Run `sudo apt install python3 python3-venv`
+Install Node.js 20+ from [nodejs.org](https://nodejs.org) (LTS).
+</details>
 
-### Red dots in Settings
-This means one or more API keys are missing or incorrect. Open `.env.local` and check:
-- No extra spaces around the `=` sign
-- No quotes around the values
-- Keys are pasted completely (no missing characters)
+<details>
+<summary><strong>"python3: command not found"</strong></summary>
 
-After editing `.env.local`, restart with `npm run clyde`.
+- **Mac:** `brew install python3`
+- **Windows:** Download from [python.org](https://www.python.org/downloads/) — check "Add to PATH"
+- **Linux:** `sudo apt install python3 python3-venv`
+</details>
+
+<details>
+<summary><strong>Red dots in Settings</strong></summary>
+
+Check `.env.local` for: no extra spaces around `=`, no quotes around values, keys fully pasted. Restart with `npm run clyde` after editing.
+</details>
+
+---
+
+<p align="center">
+  Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+</p>

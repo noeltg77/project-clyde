@@ -7,6 +7,31 @@ export type MessageStep = {
   timestamp: string;
 };
 
+export type AgentActivityStatus = {
+  phase: "working" | "complete";
+  agentId: string;
+  tokenCount?: number;
+  durationMs?: number;
+};
+
+export type VisualizationData = {
+  id: string;
+  title: string;
+  htmlContent: string;
+  description?: string;
+};
+
+export type VisualConfig = {
+  id: string;
+  title: string;
+  mode: "chart" | "code";
+  chartType?: string;
+  data?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+  code?: string;
+  description?: string;
+};
+
 export type Message = {
   id: string;
   sessionId: string;
@@ -20,6 +45,10 @@ export type Message = {
   createdAt: string;
   isStreaming?: boolean;
   steps?: MessageStep[];
+  debugPrompts?: { systemPrompt: string; userMessage: string };
+  activityStatus?: AgentActivityStatus;
+  visualizations?: VisualizationData[];
+  visuals?: VisualConfig[];
 };
 
 export type SessionSummary = {
@@ -37,6 +66,7 @@ export type ChatState = {
   messages: Message[];
   sessions: SessionSummary[];
   isConnected: boolean;
+  isInitialLoad: boolean;
   isStreaming: boolean;
   isLoadingSession: boolean;
   error: string | null;
@@ -48,7 +78,10 @@ export type ChatActions = {
   updateMessage: (id: string, partial: Partial<Message>) => void;
   appendToMessage: (id: string, textDelta: string) => void;
   addStepToMessage: (id: string, step: MessageStep) => void;
+  addVisualizationToMessage: (id: string, viz: VisualizationData) => void;
+  addVisualToMessage: (id: string, vis: VisualConfig) => void;
   setConnected: (connected: boolean) => void;
+  setInitialLoadDone: () => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
   clearMessages: () => void;
@@ -68,6 +101,7 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
     messages: [],
     sessions: [],
     isConnected: false,
+    isInitialLoad: true,
     isStreaming: false,
     isLoadingSession: false,
     error: null,
@@ -95,7 +129,24 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
             : m
         ),
       })),
+    addVisualizationToMessage: (id, viz) =>
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === id
+            ? { ...m, visualizations: [...(m.visualizations || []), viz] }
+            : m
+        ),
+      })),
+    addVisualToMessage: (id, vis) =>
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === id
+            ? { ...m, visuals: [...(m.visuals || []), vis] }
+            : m
+        ),
+      })),
     setConnected: (connected) => set({ isConnected: connected }),
+    setInitialLoadDone: () => set({ isInitialLoad: false }),
     setStreaming: (streaming) => set({ isStreaming: streaming }),
     setError: (error) => set({ error }),
     clearMessages: () => set({ messages: [] }),

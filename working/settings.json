@@ -1,4 +1,6 @@
 {
+  "clyde_model": "sonnet",
+  "subagent_default_model": "sonnet",
   "self_edit_enabled": true,
   "concurrency_cap": 5,
   "max_team_size": 3,
@@ -7,5 +9,6 @@
   "proactive_interval_hours": 24,
   "save_uploads_enabled": true,
   "prompt_caching_enabled": true,
-  "prevent_sleep_enabled": false
+  "prevent_sleep_enabled": false,
+  "debug_mode_enabled": false
 }

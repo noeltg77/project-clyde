@@ -7,6 +7,7 @@ and activity hooks.
 import asyncio
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,7 @@ from claude_agent_sdk.types import (
 from services.registry import load_registry
 from services.settings import load_settings, MODEL_ID_MAP
 from services.supabase_client import save_activity_event
-from agents.tools import registry_mcp_server, init_tools
+from agents.tools import registry_mcp_server, init_tools, update_session_context
 
 # All MCP tool names that Clyde should auto-allow (no permission popup needed)
 _AUTO_ALLOW_TOOLS = {
@@ -63,6 +64,15 @@ _AUTO_ALLOW_TOOLS = {
     "create_integration", "list_integrations", "get_integration",
     "update_integration", "delete_integration", "assign_integration",
     "call_integration",
+    # Phase 10: Workflows
+    "create_workflow", "list_workflows", "read_workflow",
+    "update_workflow", "delete_workflow", "assign_workflow",
+    # Phase 11: Gemini Subagent
+    "gemini_task",
+    # Phase 12: OpenAI Subagent
+    "openai_task",
+    # Phase 13: Visualizations
+    "create_visualisation", "create_visual",
 }
 
 
@@ -74,6 +84,9 @@ class ClydeChatManager:
         self.ws = ws
         self.client: ClaudeSDKClient | None = None
         self.session_id: str | None = None
+        # Supabase session ID — set by main.py, used for activity event persistence.
+        # Distinct from self.session_id which gets overwritten by the SDK's internal ID.
+        self.supabase_session_id: str | None = None
 
         # Permission handling state
         self.pending_permissions: dict[str, asyncio.Event] = {}
@@ -100,6 +113,10 @@ class ClydeChatManager:
         # into the system prompt, keeping the system prompt cache-friendly.
         self._volatile_context: str = ""
         self._volatile_context_sent: bool = False
+
+        # Debug: store prompts sent to the API for the last message
+        self._last_system_prompt: str = ""
+        self._last_user_message: str = ""
 
         # Initialise MCP tools with working directory
         init_tools(working_dir)
@@ -139,19 +156,23 @@ class ClydeChatManager:
             f"[Current local date and time: {local_now.strftime('%A, %d %B %Y at %I:%M %p')}]\n"
         )
 
-        # Orchestrator skills
+        # Orchestrator skills (lazy-loaded — summaries only)
         try:
             registry = load_registry(self.working_dir)
             orchestrator = registry.get("orchestrator", {})
             skill_names = orchestrator.get("skills", [])
             if skill_names:
-                skills_content = self._load_agent_skills(skill_names)
-                if skills_content:
+                skill_summaries = self._load_skill_summaries(skill_names)
+                if skill_summaries:
                     volatile_parts.append(
                         "## Your Assigned Skills\n\n"
-                        "The following skills have been assigned to you. Follow these "
-                        "documented processes when relevant to your tasks.\n\n"
-                        f"{skills_content}"
+                        "You have the following skills available. When a task matches "
+                        "a skill's description, use the `read_skill` tool to load the "
+                        "full skill content before proceeding.\n\n"
+                        f"{skill_summaries}\n\n"
+                        "**Do not guess skill procedures from memory.** Always call "
+                        "`read_skill(name=\"<skill-name>\")` to load the complete "
+                        "instructions before applying a skill."
                     )
         except Exception:
             pass  # Non-critical — continue without skills if registry read fails
@@ -270,6 +291,47 @@ class ClydeChatManager:
                     sections.append(f"### {skill_name}\n\n{content}")
         return "\n\n".join(sections) if sections else ""
 
+    def _load_skill_summaries(self, skill_names: list[str]) -> str:
+        """Load only name + description from skill YAML frontmatter.
+
+        Returns a compact bullet list so agents know what skills are available
+        without injecting full content. Agents use read_skill on demand.
+        """
+        if not skill_names:
+            return ""
+        skills_dir = os.path.join(self.working_dir, "skills")
+        entries = []
+        for skill_name in skill_names:
+            filename = f"{skill_name}.md" if not skill_name.endswith(".md") else skill_name
+            filepath = os.path.join(skills_dir, filename)
+            if not os.path.exists(filepath):
+                continue
+            with open(filepath, "r") as f:
+                content = f.read()
+
+            # Parse YAML frontmatter (between --- markers)
+            frontmatter_blocks = re.findall(
+                r'^---\s*\n(.*?)\n---',
+                content,
+                re.MULTILINE | re.DOTALL,
+            )
+            name = skill_name
+            description = ""
+            for block in frontmatter_blocks:
+                name_match = re.search(r'^name:\s*(.+)$', block, re.MULTILINE)
+                desc_match = re.search(r'^description:\s*(.+)$', block, re.MULTILINE)
+                if name_match and desc_match:
+                    name = name_match.group(1).strip()
+                    description = desc_match.group(1).strip()
+                    break
+
+            if description:
+                entries.append(f"- **{skill_name}** (`{name}`): {description}")
+            else:
+                entries.append(f"- **{skill_name}**: (no description — use `read_skill` to view)")
+
+        return "\n".join(entries) if entries else ""
+
     def _build_agent_definitions(self) -> dict[str, AgentDefinition]:
         """Load active agents from registry and build SDK AgentDefinition objects.
 
@@ -280,9 +342,19 @@ class ClydeChatManager:
         except Exception:
             return {}
 
+        settings = load_settings(self.working_dir)
+        subagent_default = settings.get("subagent_default_model", "sonnet")
+
         agents: dict[str, AgentDefinition] = {}
         for agent in registry.get("agents", []):
             if agent.get("status") == "active":
+                # Skip non-Claude agents — they're invoked via their own
+                # tools (gemini_task, openai_task), not the Claude Agent
+                # SDK's Task delegation.
+                agent_platform = agent.get("platform", "claude")
+                if agent_platform in ("gemini", "openai"):
+                    continue
+
                 prompt = self._load_agent_prompt(agent.get("system_prompt_path", ""))
 
                 # Inject accumulated memory (Phase 3C)
@@ -295,14 +367,18 @@ class ClydeChatManager:
                         f"{memory_content}"
                     )
 
-                # Inject assigned skills (Phase 3D)
-                skills_content = self._load_agent_skills(agent.get("skills", []))
-                if skills_content:
+                # Inject skill summaries for lazy-loading (Phase 3D)
+                skill_summaries = self._load_skill_summaries(agent.get("skills", []))
+                if skill_summaries:
                     prompt += (
                         "\n\n## Assigned Skills\n\n"
-                        "The following skills have been assigned to you. Follow these "
-                        "documented processes when relevant to your tasks.\n\n"
-                        f"{skills_content}"
+                        "You have the following skills available. When a task matches "
+                        "a skill's description, use the `read_skill` tool to load the "
+                        "full skill content before proceeding.\n\n"
+                        f"{skill_summaries}\n\n"
+                        "**Do not guess skill procedures from memory.** Always call "
+                        "`read_skill(name=\"<skill-name>\")` to load the complete "
+                        "instructions before applying a skill."
                     )
 
                 # NOTE: External MCP servers from registry are tracked but not passed
@@ -330,7 +406,7 @@ class ClydeChatManager:
                     description=agent.get("role", "Specialist agent"),
                     prompt=prompt,
                     tools=agent.get("tools"),
-                    model=agent.get("model", "sonnet"),
+                    model=agent.get("model", subagent_default),
                 )
         return agents
 
@@ -515,18 +591,27 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
-                event_type="started",
-                description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
-            )
-        except Exception:
-            pass
+        # Persist to Supabase (include registry data for session resume)
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="started",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_subagent_stop(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
@@ -578,18 +663,27 @@ class ClydeChatManager:
             except Exception:
                 pass
 
-        # Persist to Supabase
-        try:
-            await save_activity_event(
-                session_id=self.session_id,
-                agent_id=agent_id,
-                agent_name=agent_label,
-                event_type="stopped",
-                description=description,
-                metadata={"parent_agent": parent_agent, "is_team_member": is_team_member},
-            )
-        except Exception:
-            pass
+        # Persist to Supabase (include registry data for session resume)
+        _supa_sid = self.supabase_session_id or self.session_id
+        if _supa_sid:
+            try:
+                await save_activity_event(
+                    session_id=_supa_sid,
+                    agent_id=registry_agent.get("id", agent_id),
+                    agent_name=registry_agent.get("name", agent_label),
+                    event_type="stopped",
+                    description=description,
+                    metadata={
+                        "parent_agent": parent_agent,
+                        "is_team_member": is_team_member,
+                        "model": registry_agent.get("model", "sonnet"),
+                        "avatar": registry_agent.get("avatar", ""),
+                        "role": registry_agent.get("role", "Subagent"),
+                        "platform": registry_agent.get("platform", "claude"),
+                    },
+                )
+            except Exception:
+                pass
         return {"continue_": True}
 
     async def _on_notification(self, hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
@@ -632,6 +726,7 @@ class ClydeChatManager:
             self._sdk_session_id = sdk_session_id
 
         system_prompt = self._load_system_prompt()
+        self._last_system_prompt = system_prompt
 
         # Context injection strategy:
         # 1. If we have an SDK session ID → CLI resumes natively (no summary needed)
@@ -741,6 +836,9 @@ class ClydeChatManager:
             content = self._volatile_context + content
             self._volatile_context_sent = True
             logger.info("[MSG] Prepended volatile context to first user message")
+
+        # Store for debug mode
+        self._last_user_message = content
 
         logger.info(f"[MSG] Sending user message: {content[:100]}...")
         await self.client.query(content)

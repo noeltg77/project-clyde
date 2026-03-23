@@ -12,7 +12,6 @@ import { InsightStack } from "@/components/insights/InsightStack";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { OnboardingOverlay } from "@/components/onboarding/OnboardingOverlay";
 import { OrgChart } from "@/components/agents/OrgChart";
-import { ActiveAgentOverlay } from "@/components/agents/ActiveAgentOverlay";
 import { CostDashboard } from "@/components/cost/CostDashboard";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { InsightsDashboard } from "@/components/insights/InsightsDashboard";
@@ -104,8 +103,6 @@ export function AppShell() {
             )}
           </AnimatePresence>
 
-          {/* Floating agent cards — animate in/out from right when subagents are active */}
-          <ActiveAgentOverlay />
         </main>
         <ActivityPanel />
       </div>

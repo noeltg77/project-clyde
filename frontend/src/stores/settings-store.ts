@@ -8,6 +8,7 @@ export type SettingsState = {
   isSettingsOpen: boolean;
   isSearchOpen: boolean;
   activeView: ActiveView;
+  debugEnabled: boolean;
 };
 
 export type SettingsActions = {
@@ -18,6 +19,7 @@ export type SettingsActions = {
   setActiveView: (view: ActiveView) => void;
   toggleSearch: () => void;
   setSearchOpen: (open: boolean) => void;
+  setDebugEnabled: (enabled: boolean) => void;
 };
 
 export type SettingsStore = SettingsState & SettingsActions;
@@ -29,6 +31,7 @@ export const createSettingsStore = (initState?: Partial<SettingsState>) =>
     isSettingsOpen: false,
     isSearchOpen: false,
     activeView: "chat" as ActiveView,
+    debugEnabled: false,
     ...initState,
     setWorkingDir: (dir) => set({ workingDir: dir }),
     setBackendUrl: (url) => set({ backendUrl: url }),
@@ -37,4 +40,5 @@ export const createSettingsStore = (initState?: Partial<SettingsState>) =>
     setActiveView: (view) => set({ activeView: view }),
     toggleSearch: () => set((s) => ({ isSearchOpen: !s.isSearchOpen })),
     setSearchOpen: (open) => set({ isSearchOpen: open }),
+    setDebugEnabled: (enabled) => set({ debugEnabled: enabled }),
   }));

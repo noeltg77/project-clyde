@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { useAgentStore } from "@/stores/agent-store-provider";
+import type { Agent } from "@/stores/agent-store";
 import { springs } from "@/lib/design-tokens";
 import { PromptEditor } from "./PromptEditor";
 import { PromptHistoryViewer } from "./PromptHistoryViewer";
@@ -24,6 +25,7 @@ type RegistrySettings = {
   save_uploads_enabled: boolean;
   prompt_caching_enabled: boolean;
   prevent_sleep_enabled: boolean;
+  debug_mode_enabled: boolean;
 };
 
 const MODEL_OPTIONS = [
@@ -120,6 +122,10 @@ const ENV_VAR_GROUPS = [
   {
     service: "Anthropic",
     vars: [{ key: "ANTHROPIC_API_KEY", label: "API Key" }],
+  },
+  {
+    service: "Google (Gemini)",
+    vars: [{ key: "GEMINI_API_KEY", label: "API Key" }],
   },
   {
     service: "OpenAI",
@@ -959,6 +965,7 @@ function ControlsTab() {
   const [saving, setSaving] = useState(false);
   const orchestrator = useAgentStore((s) => s.orchestrator);
   const setOrchestrator = useAgentStore((s) => s.setOrchestrator);
+  const setDebugEnabled = useSettingsStore((s) => s.setDebugEnabled);
 
   useEffect(() => {
     async function load() {
@@ -966,12 +973,14 @@ function ControlsTab() {
         const res = await fetch(`${API_URL}/api/registry/settings`);
         const data = await res.json();
         setSettings(data);
+        // Sync debug setting to global store so MessageBubble can read it
+        setDebugEnabled(!!data.debug_mode_enabled);
       } catch {
         // ignore
       }
     }
     load();
-  }, []);
+  }, [setDebugEnabled]);
 
   async function updateSetting(key: string, value: any) {
     if (!settings) return;
@@ -989,7 +998,12 @@ function ControlsTab() {
 
       // When clyde_model changes, update the orchestrator in the agent store
       if (key === "clyde_model" && orchestrator) {
-        setOrchestrator({ ...orchestrator, model: value as "opus" | "sonnet" | "haiku" });
+        setOrchestrator({ ...orchestrator, model: value as Agent["model"] });
+      }
+
+      // Sync debug setting to global store
+      if (key === "debug_mode_enabled") {
+        setDebugEnabled(value as boolean);
       }
     } catch {
       // ignore
@@ -1286,6 +1300,44 @@ function ControlsTab() {
 
       {/* Proactive Mode */}
       <ProactiveSection settings={settings} updateSetting={updateSetting} />
+
+      {/* Debug Mode */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+          Debug
+        </h3>
+        <div className="flex items-center justify-between p-3 bg-bg-tertiary rounded-[2px] border border-border">
+          <div>
+            <p className="text-sm text-text-primary">
+              Show debug prompts
+            </p>
+            <p className="text-[10px] text-text-secondary/60 mt-0.5">
+              Display the system and user prompts sent to the API below each response
+            </p>
+          </div>
+          <button
+            onClick={() =>
+              updateSetting(
+                "debug_mode_enabled",
+                !settings.debug_mode_enabled
+              )
+            }
+            className={`relative w-10 h-5 shrink-0 rounded-full transition-colors ${
+              settings.debug_mode_enabled
+                ? "bg-accent-primary"
+                : "bg-border"
+            }`}
+          >
+            <div
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-primary transition-transform ${
+                settings.debug_mode_enabled
+                  ? "translate-x-5"
+                  : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {saving && (
         <p className="text-[10px] text-text-secondary/50 text-center">

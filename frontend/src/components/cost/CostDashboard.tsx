@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  Legend,
 } from "recharts";
 
 const API_URL =
@@ -23,10 +24,30 @@ type CostData = {
     cost_usd: number;
     message_count: number;
   }[];
+  by_platform?: {
+    platform: string;
+    cost_usd: number;
+    message_count: number;
+  }[];
   daily_breakdown: {
     date: string;
     cost_usd: number;
+    claude?: number;
+    gemini?: number;
+    openai?: number;
   }[];
+};
+
+const PLATFORM_COLOURS: Record<string, string> = {
+  claude: "#C8FF00",
+  gemini: "#4285F4",
+  openai: "#10A37F",
+};
+
+const PLATFORM_LABELS: Record<string, string> = {
+  claude: "Anthropic",
+  gemini: "Gemini",
+  openai: "OpenAI",
 };
 
 export function CostDashboard() {
@@ -78,6 +99,12 @@ export function CostDashboard() {
     );
   }
 
+  // Determine which platforms have data for the stacked chart
+  const hasClaude = data.daily_breakdown.some((d) => (d.claude ?? 0) > 0);
+  const hasGemini = data.daily_breakdown.some((d) => (d.gemini ?? 0) > 0);
+  const hasOpenAI = data.daily_breakdown.some((d) => (d.openai ?? 0) > 0);
+  const hasAnyPlatform = hasClaude || hasGemini || hasOpenAI;
+
   // Format daily chart data — show short day labels
   const chartData = data.daily_breakdown.map((d) => {
     const date = new Date(d.date);
@@ -87,8 +114,20 @@ export function CostDashboard() {
         month: "short",
       }),
       cost: d.cost_usd,
+      claude: d.claude ?? 0,
+      gemini: d.gemini ?? 0,
+      openai: d.openai ?? 0,
     };
   });
+
+  // Build platform rows for the table
+  const platformRows = (data.by_platform ?? []).map((p) => ({
+    name: PLATFORM_LABELS[p.platform] ?? p.platform,
+    platform: p.platform,
+    cost_usd: p.cost_usd,
+    message_count: p.message_count,
+    colour: PLATFORM_COLOURS[p.platform] ?? "#888",
+  }));
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -110,7 +149,43 @@ export function CostDashboard() {
             <CostCard label="This Month" value={data.month_usd} />
           </div>
 
-          {/* Daily chart */}
+          {/* Platform breakdown cards */}
+          {data.by_platform && data.by_platform.length > 0 && (
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
+                By Platform
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                {data.by_platform.map((p) => (
+                  <div
+                    key={p.platform}
+                    className="bg-bg-tertiary p-4 rounded-[2px] border border-border"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            PLATFORM_COLOURS[p.platform] ?? "#888",
+                        }}
+                      />
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50">
+                        {PLATFORM_LABELS[p.platform] ?? p.platform}
+                      </p>
+                    </div>
+                    <p className="text-xl font-mono font-bold text-accent-primary">
+                      ${p.cost_usd.toFixed(4)}
+                    </p>
+                    <p className="text-[10px] text-text-secondary/40 mt-0.5">
+                      {p.message_count} message{p.message_count !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Daily stacked chart */}
           <div className="bg-bg-tertiary p-5 rounded-[2px] border border-border">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-4">
               Last 14 Days
@@ -142,31 +217,68 @@ export function CostDashboard() {
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: "2px",
                       fontSize: 12,
-                      color: "#C8FF00",
                     }}
-                    formatter={(value?: number) => [
+                    formatter={((value: number | undefined, name: string | undefined) => [
                       `$${(value ?? 0).toFixed(4)}`,
-                      "Cost",
-                    ]}
+                      PLATFORM_LABELS[name ?? ""] ?? name ?? "",
+                    ]) as never}
                     labelStyle={{ color: "rgba(255,255,255,0.5)" }}
                   />
-                  <Bar
-                    dataKey="cost"
-                    fill="#C8FF00"
-                    radius={[2, 2, 0, 0]}
-                    maxBarSize={36}
-                  />
+                  {hasAnyPlatform && (
+                    <Legend
+                      formatter={(value: string) =>
+                        PLATFORM_LABELS[value] ?? value
+                      }
+                      wrapperStyle={{ fontSize: 11 }}
+                    />
+                  )}
+                  {hasClaude && (
+                    <Bar
+                      dataKey="claude"
+                      stackId="platform"
+                      fill={PLATFORM_COLOURS.claude}
+                      radius={[0, 0, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
+                  {hasGemini && (
+                    <Bar
+                      dataKey="gemini"
+                      stackId="platform"
+                      fill={PLATFORM_COLOURS.gemini}
+                      radius={[0, 0, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
+                  {hasOpenAI && (
+                    <Bar
+                      dataKey="openai"
+                      stackId="platform"
+                      fill={PLATFORM_COLOURS.openai}
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
+                  {/* Fallback if no platform data yet — show total */}
+                  {!hasAnyPlatform && (
+                    <Bar
+                      dataKey="cost"
+                      fill="#C8FF00"
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Agent breakdown — full table layout */}
+          {/* Platform cost table */}
           <div>
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
-              By Agent
+              Cost by Platform
             </h3>
-            {data.by_agent.length === 0 ? (
+            {platformRows.length === 0 ? (
               <p className="text-sm text-text-secondary/40 text-center py-8">
                 No cost data yet
               </p>
@@ -176,7 +288,7 @@ export function CostDashboard() {
                   <thead>
                     <tr className="border-b border-border">
                       <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-text-secondary/50">
-                        Agent
+                        Platform
                       </th>
                       <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-text-secondary/50">
                         Messages
@@ -190,29 +302,54 @@ export function CostDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.by_agent
-                      .filter((a) => !/^[0-9a-f]{6,}$/i.test(a.name))
-                      .map((agent) => (
+                    {platformRows.map((row) => (
                       <tr
-                        key={agent.name}
+                        key={row.platform}
                         className="border-b border-border/50 last:border-b-0 hover:bg-bg-secondary/50 transition-colors"
                       >
                         <td className="px-4 py-3 text-sm font-medium text-text-primary">
-                          {agent.name}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: row.colour }}
+                            />
+                            {row.name}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-text-secondary/60 text-right font-mono">
-                          {agent.message_count}
+                          {row.message_count}
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-accent-primary text-right">
-                          ${agent.cost_usd.toFixed(4)}
+                          ${row.cost_usd.toFixed(4)}
                         </td>
                         <td className="px-4 py-3 text-[11px] text-text-secondary/40 text-right font-mono">
-                          {agent.message_count > 0
-                            ? `$${(agent.cost_usd / agent.message_count).toFixed(4)}`
+                          {row.message_count > 0
+                            ? `$${(row.cost_usd / row.message_count).toFixed(4)}`
                             : "—"}
                         </td>
                       </tr>
                     ))}
+                    {/* Total row */}
+                    {platformRows.length > 1 && (
+                      <tr className="bg-bg-secondary/30">
+                        <td className="px-4 py-3 text-sm font-semibold text-text-primary">
+                          Total
+                        </td>
+                        <td className="px-4 py-3 text-sm text-text-secondary/60 text-right font-mono font-semibold">
+                          {platformRows.reduce((s, r) => s + r.message_count, 0)}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-accent-primary text-right font-semibold">
+                          ${platformRows.reduce((s, r) => s + r.cost_usd, 0).toFixed(4)}
+                        </td>
+                        <td className="px-4 py-3 text-[11px] text-text-secondary/40 text-right font-mono">
+                          {(() => {
+                            const totalMsgs = platformRows.reduce((s, r) => s + r.message_count, 0);
+                            const totalCost = platformRows.reduce((s, r) => s + r.cost_usd, 0);
+                            return totalMsgs > 0 ? `$${(totalCost / totalMsgs).toFixed(4)}` : "—";
+                          })()}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

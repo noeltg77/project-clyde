@@ -10,7 +10,8 @@
     "system_prompt_path": "/working/prompts/clyde-system.md",
     "status": "active",
     "skills": [
-      "Skill creator"
+      "Skill creator",
+      "Visualisation"
     ],
     "memory_path": "/working/memory/clyde-memory.md"
   },

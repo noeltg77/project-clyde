@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAgentStore } from "@/stores/agent-store-provider";
 import { useSettingsStore } from "@/stores/settings-store-provider";
 import { AgentAvatar } from "./AgentAvatar";
+import { PlatformLogo } from "./PlatformLogo";
 import { ModelBadge } from "./ModelBadge";
 import { TeamBadge } from "./TeamBadge";
+import { DynamicIcon, TeamIconPicker } from "./TeamIconPicker";
 import type { Agent, Team } from "@/stores/agent-store";
 
 const API_URL =
@@ -17,6 +19,12 @@ const connectorColor: Record<string, string> = {
   opus: "#C8FF00",
   sonnet: "#00D4AA",
   haiku: "#A0A090",
+  "gemini-pro": "#4285F4",
+  "gemini-flash": "#FBBC04",
+  "gemini-lite": "#34A853",
+  "gpt-5.4": "#10A37F",
+  "gpt-5.4-mini": "#10A37F",
+  "gpt-5.4-nano": "#10A37F",
 };
 
 /* ─── SVG connector lines between nodes ─── */
@@ -143,22 +151,20 @@ function AgentNode({
   team?: Team | null;
   teamBorderColor?: string;
 }) {
+  const modelBorderMap: Record<string, string> = {
+    opus: "border-agent-opus",
+    sonnet: "border-agent-sonnet",
+    haiku: "border-agent-haiku",
+    "gemini-pro": "border-[#4285F4]",
+    "gemini-flash": "border-[#FBBC04]",
+    "gemini-lite": "border-[#34A853]",
+    "gpt-5.4": "border-[#10A37F]",
+    "gpt-5.4-mini": "border-[#10A37F]",
+    "gpt-5.4-nano": "border-[#10A37F]",
+  };
   const borderColor = isOrchestrator
     ? "border-agent-opus"
-    : agent.model === "sonnet"
-    ? "border-agent-sonnet"
-    : agent.model === "haiku"
-    ? "border-agent-haiku"
-    : "border-agent-opus";
-
-  const statusDotColor =
-    agent.status === "active"
-      ? isActive
-        ? "bg-accent-primary"
-        : "bg-accent-tertiary"
-      : agent.status === "paused"
-      ? "bg-yellow-500"
-      : "bg-text-secondary/30";
+    : modelBorderMap[agent.model] || "border-agent-opus";
 
   const avatarSize = 72;
 
@@ -175,10 +181,10 @@ function AgentNode({
       `}
       style={{ zIndex: 1, ...(teamBorderColor ? { borderColor: teamBorderColor } : {}) }}
     >
-      {/* Status indicator — top-right square dot */}
-      <div
-        className={`absolute top-3 right-3 w-2 h-2 rounded-[1px] ${statusDotColor}`}
-      />
+      {/* Platform logo — top-right */}
+      <div className="absolute top-3 right-3">
+        <PlatformLogo platform={agent.platform || "claude"} size={16} />
+      </div>
 
       <AgentAvatar
         src={agent.avatar || undefined}
@@ -224,9 +230,11 @@ function TeamGroupCard({
       style={{ borderColor: team.color, zIndex: 1 }}
     >
       <div
-        className="w-5 h-5 rounded-[2px]"
-        style={{ backgroundColor: team.color }}
-      />
+        className="w-8 h-8 rounded-[4px] flex items-center justify-center"
+        style={{ backgroundColor: `${team.color}20` }}
+      >
+        <DynamicIcon name={team.icon || "Users"} size={18} color={team.color} />
+      </div>
       <p className="font-bold text-text-primary text-base">{team.name}</p>
       <p className="text-text-secondary text-[12px]">
         {memberCount} {memberCount === 1 ? "agent" : "agents"}
@@ -235,19 +243,214 @@ function TeamGroupCard({
   );
 }
 
+/* ─── HSV ↔ Hex helpers ─── */
+
+function hexToHsv(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  const v = max;
+  const s = max === 0 ? 0 : d / max;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h * 360, s, v];
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  const hh = h / 60;
+  const c = v * s;
+  const x = c * (1 - Math.abs((hh % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (hh < 1) { r = c; g = x; }
+  else if (hh < 2) { r = x; g = c; }
+  else if (hh < 3) { g = c; b = x; }
+  else if (hh < 4) { g = x; b = c; }
+  else if (hh < 5) { r = x; b = c; }
+  else { r = c; b = x; }
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+/* ─── Custom styled colour picker ─── */
+
+function TeamColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [hsv, setHsv] = useState<[number, number, number]>(() => hexToHsv(value));
+  const svCanvasRef = useRef<HTMLCanvasElement>(null);
+  const hueCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [draggingSV, setDraggingSV] = useState(false);
+  const [draggingHue, setDraggingHue] = useState(false);
+
+  const SV_W = 220, SV_H = 150, HUE_W = 220, HUE_H = 14;
+
+  // Sync when external value changes
+  useEffect(() => {
+    setHsv(hexToHsv(value));
+  }, [value]);
+
+  // Draw saturation/value gradient
+  const drawSV = useCallback((h: number) => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // White → hue horizontal gradient
+    const hGrad = ctx.createLinearGradient(0, 0, SV_W, 0);
+    hGrad.addColorStop(0, "#FFFFFF");
+    hGrad.addColorStop(1, hsvToHex(h, 1, 1));
+    ctx.fillStyle = hGrad;
+    ctx.fillRect(0, 0, SV_W, SV_H);
+
+    // Transparent → black vertical gradient
+    const vGrad = ctx.createLinearGradient(0, 0, 0, SV_H);
+    vGrad.addColorStop(0, "rgba(0,0,0,0)");
+    vGrad.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(0, 0, SV_W, SV_H);
+  }, []);
+
+  // Draw hue bar
+  const drawHue = useCallback(() => {
+    const canvas = hueCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const grad = ctx.createLinearGradient(0, 0, HUE_W, 0);
+    for (let i = 0; i <= 6; i++) {
+      grad.addColorStop(i / 6, hsvToHex(i * 60, 1, 1));
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, HUE_W, HUE_H);
+  }, []);
+
+  useEffect(() => {
+    drawSV(hsv[0]);
+    drawHue();
+  }, [hsv[0], drawSV, drawHue]);
+
+  const updateSV = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const canvas = svCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+    const newHsv: [number, number, number] = [hsv[0], s, v];
+    setHsv(newHsv);
+    onChange(hsvToHex(newHsv[0], newHsv[1], newHsv[2]));
+  }, [hsv, onChange]);
+
+  const updateHue = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const canvas = hueCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const h = Math.max(0, Math.min(359, ((e.clientX - rect.left) / rect.width) * 360));
+    const newHsv: [number, number, number] = [h, hsv[1], hsv[2]];
+    setHsv(newHsv);
+    onChange(hsvToHex(newHsv[0], newHsv[1], newHsv[2]));
+  }, [hsv, onChange]);
+
+  // Global mouse listeners for dragging
+  useEffect(() => {
+    if (!draggingSV && !draggingHue) return;
+    const handleMove = (e: MouseEvent) => {
+      if (draggingSV) updateSV(e);
+      if (draggingHue) updateHue(e);
+    };
+    const handleUp = () => {
+      setDraggingSV(false);
+      setDraggingHue(false);
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingSV, draggingHue, updateSV, updateHue]);
+
+  // Thumb positions
+  const svThumbX = hsv[1] * SV_W;
+  const svThumbY = (1 - hsv[2]) * SV_H;
+  const hueThumbX = (hsv[0] / 360) * HUE_W;
+
+  return (
+    <div className="space-y-3">
+      {/* Saturation / Value canvas */}
+      <div className="relative" style={{ width: SV_W, height: SV_H }}>
+        <canvas
+          ref={svCanvasRef}
+          width={SV_W}
+          height={SV_H}
+          className="rounded-[3px] cursor-crosshair block"
+          onMouseDown={(e) => { setDraggingSV(true); updateSV(e); }}
+        />
+        {/* Thumb */}
+        <div
+          className="absolute pointer-events-none"
+          style={{ left: svThumbX - 7, top: svThumbY - 7 }}
+        >
+          <div className="w-[14px] h-[14px] rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.3),inset_0_0_0_1px_rgba(0,0,0,0.2)]" />
+        </div>
+      </div>
+
+      {/* Hue bar */}
+      <div className="relative" style={{ width: HUE_W, height: HUE_H }}>
+        <canvas
+          ref={hueCanvasRef}
+          width={HUE_W}
+          height={HUE_H}
+          className="rounded-full cursor-pointer block"
+          onMouseDown={(e) => { setDraggingHue(true); updateHue(e); }}
+        />
+        {/* Hue thumb */}
+        <div
+          className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ left: hueThumbX - 7 }}
+        >
+          <div className="w-[14px] h-[14px] rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.3)]"
+            style={{ backgroundColor: hsvToHex(hsv[0], 1, 1) }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Inline-editable Team Header ─── */
 function TeamHeader({
   team,
   onBack,
   onRename,
+  onColorChange,
+  onIconChange,
 }: {
   team: Team;
   onBack: () => void;
   onRename: (newName: string) => void;
+  onColorChange: (newColor: string) => void;
+  onIconChange: (newIcon: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(team.name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [draftColor, setDraftColor] = useState(team.color);
+  const [hexInput, setHexInput] = useState(team.color);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -255,6 +458,26 @@ function TeamHeader({
       inputRef.current.select();
     }
   }, [editing]);
+
+  // Sync draft colour when team changes
+  useEffect(() => {
+    setDraftColor(team.color);
+    setHexInput(team.color);
+  }, [team.color]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!colorPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setColorPickerOpen(false);
+        setDraftColor(team.color);
+        setHexInput(team.color);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [colorPickerOpen, team.color]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -264,6 +487,20 @@ function TeamHeader({
       setDraft(team.name);
     }
     setEditing(false);
+  };
+
+  const handleHexChange = (value: string) => {
+    setHexInput(value);
+    // Auto-apply if it looks like a valid hex colour
+    const cleaned = value.startsWith("#") ? value : `#${value}`;
+    if (/^#[0-9A-Fa-f]{6}$/.test(cleaned)) {
+      setDraftColor(cleaned);
+    }
+  };
+
+  const saveColor = () => {
+    onColorChange(draftColor);
+    setColorPickerOpen(false);
   };
 
   return (
@@ -278,10 +515,94 @@ function TeamHeader({
         Back
       </button>
 
-      <div
-        className="w-4 h-4 rounded-[2px] flex-shrink-0"
-        style={{ backgroundColor: team.color }}
-      />
+      {/* Icon — click to open icon picker */}
+      <div className="relative">
+        <button
+          onClick={() => { setIconPickerOpen(!iconPickerOpen); setColorPickerOpen(false); }}
+          className="w-8 h-8 rounded-[4px] flex items-center justify-center flex-shrink-0 border border-white/10 hover:border-white/30 transition-colors cursor-pointer"
+          style={{ backgroundColor: `${team.color}20` }}
+          title="Change team icon"
+        >
+          <DynamicIcon name={team.icon || "Users"} size={18} color={team.color} />
+        </button>
+
+        {iconPickerOpen && (
+          <TeamIconPicker
+            value={team.icon || "Users"}
+            teamColor={team.color}
+            onSelect={(iconName) => {
+              onIconChange(iconName);
+              setIconPickerOpen(false);
+            }}
+            onClose={() => setIconPickerOpen(false)}
+          />
+        )}
+      </div>
+
+      {/* Colour dot — click to open colour picker */}
+      <div className="relative" ref={pickerRef}>
+        <button
+          onClick={() => { setColorPickerOpen(!colorPickerOpen); setIconPickerOpen(false); }}
+          className="w-4 h-4 rounded-full flex-shrink-0 border border-white/20 hover:border-white/50 transition-colors cursor-pointer"
+          style={{ backgroundColor: team.color }}
+          title="Change team colour"
+        />
+
+        {/* Colour picker popover */}
+        {colorPickerOpen && (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-bg-secondary border border-border rounded-[4px] p-4 shadow-xl"
+            style={{ width: 252 }}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50 mb-3">
+              Team Colour
+            </p>
+
+            {/* Custom SV + Hue picker */}
+            <TeamColorPicker
+              value={draftColor}
+              onChange={(hex) => {
+                setDraftColor(hex);
+                setHexInput(hex);
+              }}
+            />
+
+            {/* Hex input */}
+            <div className="mt-3 mb-3">
+              <label className="text-[10px] text-text-secondary/40 block mb-1">Hex Code</label>
+              <input
+                type="text"
+                value={hexInput}
+                onChange={(e) => handleHexChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveColor();
+                  if (e.key === "Escape") {
+                    setColorPickerOpen(false);
+                    setDraftColor(team.color);
+                    setHexInput(team.color);
+                  }
+                }}
+                placeholder="#FF6B6B"
+                maxLength={7}
+                className="w-full px-2 py-1.5 text-sm font-mono bg-bg-tertiary border border-border rounded-[2px] text-text-primary outline-none focus:border-accent-primary/50"
+              />
+            </div>
+
+            {/* Preview + Save */}
+            <div className="flex items-center gap-2">
+              <div
+                className="w-6 h-6 rounded-[2px] border border-white/10 flex-shrink-0"
+                style={{ backgroundColor: draftColor }}
+              />
+              <button
+                onClick={saveColor}
+                className="flex-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest rounded-[2px] bg-accent-primary text-bg-primary hover:bg-accent-primary/90 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {editing ? (
         <>
@@ -548,7 +869,7 @@ export function OrgChart() {
   const [loading, setLoading] = useState(true);
 
   // View mode: flat (all agents) or teams (grouped by team)
-  const [viewMode, setViewMode] = useState<"flat" | "teams">("flat");
+  const [viewMode, setViewMode] = useState<"flat" | "teams">("teams");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -574,6 +895,7 @@ export function OrgChart() {
               id: string;
               name: string;
               role: string;
+              platform?: string;
               model: string;
               avatar?: string;
               status: string;
@@ -584,6 +906,7 @@ export function OrgChart() {
               registryId: a.id,
               name: a.name,
               role: a.role,
+              platform: (a.platform || "claude") as Agent["platform"],
               model: a.model as Agent["model"],
               avatar: a.avatar || "",
               status: a.status as Agent["status"],
@@ -596,10 +919,11 @@ export function OrgChart() {
 
           // Parse teams
           const parsedTeams: Team[] = (data.teams || []).map(
-            (t: { id: string; name: string; color: string; created_at?: string }) => ({
+            (t: { id: string; name: string; color: string; icon?: string; created_at?: string }) => ({
               id: t.id,
               name: t.name,
               color: t.color,
+              icon: t.icon || "Users",
               created_at: t.created_at || "",
             })
           );
@@ -648,6 +972,38 @@ export function OrgChart() {
       }
     } catch (err) {
       console.error("Failed to rename team:", err);
+    }
+  };
+
+  // Handle team colour change via REST
+  const handleTeamColorChange = async (teamId: string, newColor: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color: newColor }),
+      });
+      if (res.ok) {
+        updateTeamStore(teamId, { color: newColor });
+      }
+    } catch (err) {
+      console.error("Failed to update team colour:", err);
+    }
+  };
+
+  // Handle team icon change via REST
+  const handleTeamIconChange = async (teamId: string, newIcon: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ icon: newIcon }),
+      });
+      if (res.ok) {
+        updateTeamStore(teamId, { icon: newIcon });
+      }
+    } catch (err) {
+      console.error("Failed to update team icon:", err);
     }
   };
 
@@ -700,6 +1056,7 @@ export function OrgChart() {
     registryId: "clyde-001",
     name: "Clyde",
     role: "CEO",
+    platform: "claude",
     model: "opus",
     avatar: "/avatars/clyde.jpeg",
     status: "active",
@@ -1046,6 +1403,8 @@ export function OrgChart() {
                           setSelectedAgent(null);
                         }}
                         onRename={(newName) => handleTeamRename(selectedTeamId, newName)}
+                        onColorChange={(newColor) => handleTeamColorChange(selectedTeamId, newColor)}
+                        onIconChange={(newIcon) => handleTeamIconChange(selectedTeamId, newIcon)}
                       />
                     )
                   )}

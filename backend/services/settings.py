@@ -17,6 +17,7 @@ from typing import Any
 # picked up on next load even if the user's settings.json doesn't have them.
 DEFAULTS: dict[str, Any] = {
     "clyde_model": "opus",
+    "subagent_default_model": "sonnet",
     "self_edit_enabled": True,
     "concurrency_cap": 5,
     "max_team_size": 3,
@@ -26,6 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "save_uploads_enabled": True,
     "prompt_caching_enabled": True,
     "prevent_sleep_enabled": False,
+    "debug_mode_enabled": False,
 }
 
 # Maps model tier names to Claude API model IDs
@@ -33,6 +35,39 @@ MODEL_ID_MAP: dict[str, str] = {
     "opus": "claude-opus-4-6",
     "sonnet": "claude-sonnet-4-6",
     "haiku": "claude-haiku-4-5-20251001",
+}
+
+# Maps Gemini tier names to Google API model IDs
+GEMINI_MODEL_ID_MAP: dict[str, str] = {
+    "gemini-pro": "gemini-3.1-pro-preview",
+    "gemini-flash": "gemini-3-flash-preview",
+    "gemini-lite": "gemini-3.1-flash-lite-preview",
+}
+
+# Gemini pricing per 1M tokens: (input_usd, output_usd)
+# Pro has tiered pricing: $2/$12 under 200k tokens, $4/$18 above 200k tokens.
+# We use the standard (<200k) rate; the client applies the higher rate when needed.
+GEMINI_PRICING: dict[str, tuple[float, float]] = {
+    "gemini-3.1-pro-preview": (2.0, 12.0),
+    "gemini-3-flash-preview": (0.50, 3.0),
+    "gemini-3.1-flash-lite-preview": (0.25, 1.50),
+}
+
+# Pro pricing for prompts exceeding 200k tokens
+GEMINI_PRO_LONG_CONTEXT_PRICING: tuple[float, float] = (4.0, 18.0)
+
+# Maps OpenAI tier names to API model IDs
+OPENAI_MODEL_ID_MAP: dict[str, str] = {
+    "gpt-5.4": "gpt-5.4",
+    "gpt-5.4-mini": "gpt-5.4-mini",
+    "gpt-5.4-nano": "gpt-5.4-nano",
+}
+
+# OpenAI pricing per 1M tokens: (input_usd, output_usd)
+OPENAI_PRICING: dict[str, tuple[float, float]] = {
+    "gpt-5.4": (2.50, 15.0),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
 }
 
 # In-memory cache (TTL-based, invalidated on save)

@@ -8,6 +8,7 @@ search chat history, manage agent memory, and handle skills.
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,16 +37,49 @@ from services.registry import (
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
-from services.supabase_client import search_messages
+from services.settings import load_settings, GEMINI_MODEL_ID_MAP, OPENAI_MODEL_ID_MAP
+from services.supabase_client import search_messages, save_message, save_activity_event
+from services.gemini_client import call_gemini
+from services.openai_client import call_openai
 
-# Module-level working_dir — set by init_tools() before server is used
+# Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
+_session_id: str = ""
+_ws: Any = None  # WebSocket for pushing activity events to the frontend
+
+# Phase 13: Visualisation — pending payloads accumulated during a response
+_pending_visualizations: list[dict] = []
+_pending_visuals: list[dict] = []
+
+
+def get_and_clear_pending_visualizations() -> list[dict]:
+    """Return and clear all pending legacy visualisation payloads."""
+    global _pending_visualizations
+    result = list(_pending_visualizations)
+    _pending_visualizations.clear()
+    return result
+
+
+def get_and_clear_pending_visuals() -> list[dict]:
+    """Return and clear all pending container-based visual payloads."""
+    global _pending_visuals
+    result = list(_pending_visuals)
+    _pending_visuals.clear()
+    return result
 
 
 def init_tools(working_dir: str) -> None:
     """Set the working directory for all tool functions."""
     global _working_dir
     _working_dir = working_dir
+
+
+def update_session_context(session_id: str, ws: Any = None) -> None:
+    """Update the current chat session ID and WebSocket reference."""
+    global _session_id, _ws
+    _session_id = session_id
+    if ws is not None:
+        _ws = ws
 
 
 def _safe_path(relative_or_virtual: str) -> str:
@@ -88,7 +122,9 @@ def _error_response(text: str) -> dict[str, Any]:
     "create_agent",
     "Create a new subagent in the registry. Writes the system prompt to file, "
     "initialises memory, creates a working directory, selects an avatar, and "
-    "registers the agent. Returns the new agent's details.",
+    "registers the agent. Returns the new agent's details. "
+    "Set platform to 'gemini' for a tool-free Gemini subagent (use gemini-pro, "
+    "gemini-flash, or gemini-lite as the model).",
     {
         "name": str,
         "role": str,
@@ -96,6 +132,7 @@ def _error_response(text: str) -> dict[str, Any]:
         "gender": str,
         "system_prompt": str,
         "tools": str,
+        "platform": str,
     },
 )
 async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -103,7 +140,15 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
     try:
         name = args.get("name", "").strip()
         role = args.get("role", "").strip()
-        model = args.get("model", "sonnet").strip().lower()
+        platform = args.get("platform", "claude").strip().lower()
+        settings = load_settings(_working_dir)
+        default_model = settings.get("subagent_default_model", "sonnet")
+        _platform_default_model = {
+            "claude": default_model,
+            "gemini": "gemini-flash",
+            "openai": "gpt-5.4-mini",
+        }
+        model = args.get("model", _platform_default_model.get(platform, default_model)).strip().lower()
         gender = args.get("gender", "male").strip().lower()
         system_prompt = args.get("system_prompt", "").strip()
         tools_str = args.get("tools", "")
@@ -114,18 +159,28 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("Agent role is required.")
         if not system_prompt:
             return _error_response("System prompt is required.")
-        if model not in ("sonnet", "haiku", "opus"):
-            return _error_response(f"Invalid model '{model}'. Must be sonnet, haiku, or opus.")
+        if platform not in ("claude", "gemini", "openai"):
+            return _error_response(f"Invalid platform '{platform}'. Must be claude, gemini, or openai.")
+        if platform == "claude" and model not in ("sonnet", "haiku", "opus"):
+            return _error_response(f"Invalid Claude model '{model}'. Must be sonnet, haiku, or opus.")
+        if platform == "gemini" and model not in ("gemini-pro", "gemini-flash", "gemini-lite"):
+            return _error_response(f"Invalid Gemini model '{model}'. Must be gemini-pro, gemini-flash, or gemini-lite.")
+        if platform == "openai" and model not in ("gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"):
+            return _error_response(f"Invalid OpenAI model '{model}'. Must be gpt-5.4, gpt-5.4-mini, or gpt-5.4-nano.")
         if gender not in ("male", "female"):
             return _error_response(f"Invalid gender '{gender}'. Must be male or female.")
 
-        # Parse tools — accept comma-separated string or JSON array
-        tools_list = None
-        if tools_str:
-            try:
-                tools_list = json.loads(tools_str)
-            except json.JSONDecodeError:
-                tools_list = [t.strip() for t in tools_str.split(",") if t.strip()]
+        # Gemini and OpenAI agents are tool-free — force empty tools
+        if platform in ("gemini", "openai"):
+            tools_list = []
+        else:
+            # Parse tools — accept comma-separated string or JSON array
+            tools_list = None
+            if tools_str:
+                try:
+                    tools_list = json.loads(tools_str)
+                except json.JSONDecodeError:
+                    tools_list = [t.strip() for t in tools_str.split(",") if t.strip()]
 
         agent_entry = create_agent(
             working_dir=_working_dir,
@@ -137,17 +192,23 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             gender=gender,
         )
 
+        # Store platform in the agent entry
+        if platform != "claude":
+            agent_entry["platform"] = platform
+            update_agent(_working_dir, agent_entry["id"], {"platform": platform})
+
         return _text_response(
             f"Successfully created agent:\n"
             f"  Name: {agent_entry['name']}\n"
             f"  ID: {agent_entry['id']}\n"
             f"  Role: {agent_entry['role']}\n"
+            f"  Platform: {platform}\n"
             f"  Model: {agent_entry['model']}\n"
             f"  Avatar: {agent_entry.get('avatar', 'none')}\n"
             f"  Prompt: {agent_entry['system_prompt_path']}\n"
             f"  Memory: {agent_entry.get('memory_path', '')}\n"
             f"  Working dir: {agent_entry.get('working_dir', '')}\n"
-            f"  Tools: {', '.join(agent_entry.get('tools', []))}"
+            f"  Tools: {', '.join(agent_entry.get('tools', [])) if platform == 'claude' else '(none — Gemini agents are tool-free)'}"
         )
 
     except ValueError as e:
@@ -228,8 +289,13 @@ async def update_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
 
         model = args.get("model", "").strip().lower()
         if model:
-            if model not in ("sonnet", "haiku", "opus"):
-                return _error_response(f"Invalid model '{model}'.")
+            valid_models = (
+                "sonnet", "haiku", "opus",
+                "gemini-pro", "gemini-flash", "gemini-lite",
+                "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+            )
+            if model not in valid_models:
+                return _error_response(f"Invalid model '{model}'. Valid: {', '.join(valid_models)}")
             updates["model"] = model
 
         status = args.get("status", "").strip().lower()
@@ -321,10 +387,18 @@ async def get_agent_details_tool(args: dict[str, Any]) -> dict[str, Any]:
 @tool(
     "create_team",
     "Create a new team for grouping agents by function or project. "
-    "A unique color is assigned automatically unless specified.",
+    "A unique color is assigned automatically unless specified. "
+    "Set icon to a Lucide icon name that represents the team's function. "
+    "Common icons: Code, Palette, PenTool, FlaskConical, Megaphone, "
+    "BarChart3, Shield, Rocket, Users, Lightbulb, Wrench, Globe, "
+    "BookOpen, Camera, Cpu, Database, Layers, Target, Zap, "
+    "Briefcase, Building2, GraduationCap, Headphones, Mail, "
+    "MessageSquare, Music, Newspaper, Search, ShoppingCart, "
+    "Star, TrendingUp, Video, Wand2.",
     {
         "name": str,
         "color": str,
+        "icon": str,
     },
 )
 async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -332,6 +406,7 @@ async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
     try:
         name = args.get("name", "").strip()
         color = args.get("color", "").strip() or None
+        icon = args.get("icon", "").strip() or None
 
         if not name:
             return _error_response("Team name is required.")
@@ -340,13 +415,15 @@ async def create_team_tool(args: dict[str, Any]) -> dict[str, Any]:
             working_dir=_working_dir,
             name=name,
             color=color,
+            icon=icon,
         )
 
         return _text_response(
             f"Successfully created team:\n"
             f"  Name: {team_entry['name']}\n"
             f"  ID: {team_entry['id']}\n"
-            f"  Color: {team_entry['color']}"
+            f"  Color: {team_entry['color']}\n"
+            f"  Icon: {team_entry['icon']}"
         )
 
     except ValueError as e:
@@ -372,10 +449,17 @@ async def list_teams_tool(args: dict[str, Any]) -> dict[str, Any]:
         for t in teams:
             members = get_team_members(_working_dir, t["id"])
             member_names = [m["name"] for m in members] if members else ["(none)"]
+            # Load workflow count from team file
+            try:
+                team_data = load_team_file(_working_dir, t["id"])
+                workflow_count = len(team_data.get("workflows", []))
+            except Exception:
+                workflow_count = 0
             lines.append(
                 f"  - {t['name']} ({t['id']})\n"
                 f"    Color: {t['color']}\n"
-                f"    Members ({len(members)}): {', '.join(member_names)}"
+                f"    Members ({len(members)}): {', '.join(member_names)}\n"
+                f"    Workflows: {workflow_count}"
             )
 
         return _text_response("\n".join(lines))
@@ -386,11 +470,14 @@ async def list_teams_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "update_team",
-    "Update a team's name or color. Specify the team by name or ID.",
+    "Update a team's name, color, or icon. Specify the team by name or ID. "
+    "Icon should be a Lucide icon name (e.g. Code, Palette, FlaskConical, "
+    "Megaphone, Rocket, Shield, Wrench, Target, Zap, Database, Layers).",
     {
         "team_name_or_id": str,
         "name": str,
         "color": str,
+        "icon": str,
     },
 )
 async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -416,6 +503,10 @@ async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
         new_color = args.get("color", "").strip()
         if new_color:
             updates["color"] = new_color
+
+        new_icon = args.get("icon", "").strip()
+        if new_icon:
+            updates["icon"] = new_icon
 
         if not updates:
             return _error_response("No updates provided.")
@@ -2386,6 +2477,1013 @@ async def call_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"Failed to call integration: {str(e)}")
 
 
+# ─── Workflow Tools (Phase 10) ─────────────────────────────────────
+
+
+def _find_workflow(name_or_id: str) -> str | None:
+    """Find a workflow file by ID, name, or sanitised name. Returns abs path or None."""
+    workflows_dir = os.path.join(_working_dir, "workflows")
+    if not os.path.isdir(workflows_dir):
+        return None
+
+    # Try exact ID match
+    try:
+        exact = _safe_path(f"workflows/{name_or_id}.json")
+        if os.path.exists(exact):
+            return exact
+    except ValueError:
+        pass
+
+    # Scan all workflow files for a name match
+    for fname in os.listdir(workflows_dir):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(workflows_dir, fname)
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)
+            if data.get("name", "").lower() == name_or_id.lower():
+                return fpath
+            if data.get("id", "").lower() == name_or_id.lower():
+                return fpath
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    # Try sanitised kebab-case
+    sanitised = name_or_id.lower().replace(" ", "-").replace("_", "-")
+    try:
+        san_path = _safe_path(f"workflows/{sanitised}.json")
+        if os.path.exists(san_path):
+            return san_path
+    except ValueError:
+        pass
+
+    return None
+
+
+@tool(
+    "create_workflow",
+    "Create a new workflow — a multi-stage process that defines how agents collaborate "
+    "on a specific type of task. Workflows belong to teams and describe stage sequences, "
+    "agent assignments, rules, and failure handling. "
+    "stages must be a JSON array of stage objects with: stage (number), name, agent, action, "
+    "inputs (array), outputs (array), blocking (bool). "
+    "rules is an optional JSON array of constraint strings.",
+    {
+        "name": str,
+        "description": str,
+        "team_name_or_id": str,
+        "stages": str,
+        "rules": str,
+        "on_failure": str,
+    },
+)
+async def create_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new workflow and assign it to a team."""
+    try:
+        name = args.get("name", "").strip()
+        description = args.get("description", "").strip()
+        team_identifier = args.get("team_name_or_id", "").strip()
+        stages_str = args.get("stages", "").strip()
+        rules_str = args.get("rules", "").strip()
+        on_failure = args.get("on_failure", "").strip()
+
+        if not name:
+            return _error_response("Workflow name is required.")
+        if not description:
+            return _error_response("Workflow description is required.")
+        if not team_identifier:
+            return _error_response("team_name_or_id is required.")
+        if not stages_str:
+            return _error_response("stages is required (JSON array of stage objects).")
+
+        # Parse stages
+        try:
+            stages = json.loads(stages_str)
+            if not isinstance(stages, list):
+                return _error_response("stages must be a JSON array.")
+        except json.JSONDecodeError:
+            return _error_response("stages must be valid JSON.")
+
+        # Parse rules
+        rules: list[str] = []
+        if rules_str:
+            try:
+                rules = json.loads(rules_str)
+                if not isinstance(rules, list):
+                    rules = [rules_str]
+            except json.JSONDecodeError:
+                rules = [r.strip() for r in rules_str.split(",") if r.strip()]
+
+        # Resolve team
+        team = get_team_by_name(_working_dir, team_identifier)
+        if not team:
+            team = get_team_by_id(_working_dir, team_identifier)
+        if not team:
+            return _error_response(f"Team '{team_identifier}' not found.")
+
+        # Generate ID
+        workflow_id = name.lower().replace(" ", "-").replace("_", "-")
+        workflow_id = "".join(c for c in workflow_id if c.isalnum() or c == "-")
+
+        # Check for existing
+        try:
+            filepath = _safe_path(f"workflows/{workflow_id}.json")
+        except ValueError as e:
+            return _error_response(str(e))
+
+        if os.path.exists(filepath):
+            return _error_response(
+                f"Workflow '{workflow_id}' already exists. Use update_workflow to modify it."
+            )
+
+        # Build workflow JSON
+        now = datetime.now(timezone.utc).isoformat()
+        workflow = {
+            "id": workflow_id,
+            "name": name,
+            "description": description,
+            "created_at": now,
+            "version": 1,
+            "team": team["id"],
+            "stages": stages,
+            "rules": rules,
+            "on_failure": on_failure or "Report back to the user before proceeding",
+        }
+
+        # Write workflow file
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w") as f:
+            json.dump(workflow, f, indent=2)
+
+        # Add workflow ID to team file
+        try:
+            team_data = load_team_file(_working_dir, team["id"])
+            wf_list = team_data.get("workflows", [])
+            if workflow_id not in wf_list:
+                wf_list.append(workflow_id)
+                update_team(_working_dir, team["id"], {"workflows": wf_list})
+        except Exception:
+            pass  # Workflow file saved — team link is non-critical
+
+        return _text_response(
+            f"Created workflow '{name}' ({workflow_id}) with {len(stages)} stages.\n"
+            f"Assigned to team: {team['name']}"
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to create workflow: {str(e)}")
+
+
+@tool(
+    "list_workflows",
+    "List workflows with summaries (name, description, team, stage count). "
+    "Optionally filter by team. Does NOT return full stage details — "
+    "use read_workflow to load the complete workflow.",
+    {"team_name_or_id": str},
+)
+async def list_workflows_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List workflows with summary info."""
+    try:
+        team_filter = args.get("team_name_or_id", "").strip()
+        workflows_dir = os.path.join(_working_dir, "workflows")
+
+        if not os.path.isdir(workflows_dir):
+            return _text_response("No workflows directory found. No workflows have been created yet.")
+
+        files = sorted(f for f in os.listdir(workflows_dir) if f.endswith(".json"))
+        if not files:
+            return _text_response("No workflows found.")
+
+        # Resolve team filter if provided
+        filter_team_id = None
+        if team_filter:
+            team = get_team_by_name(_working_dir, team_filter)
+            if not team:
+                team = get_team_by_id(_working_dir, team_filter)
+            if team:
+                filter_team_id = team["id"]
+            else:
+                return _text_response(f"Team '{team_filter}' not found.")
+
+        # Load team names for display
+        teams_map: dict[str, str] = {}
+        try:
+            all_teams = get_teams(_working_dir)
+            for t in all_teams:
+                teams_map[t["id"]] = t["name"]
+        except Exception:
+            pass
+
+        entries = []
+        for fname in files:
+            fpath = os.path.join(workflows_dir, fname)
+            try:
+                with open(fpath, "r") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            wf_team = data.get("team", "")
+            if filter_team_id and wf_team != filter_team_id:
+                continue
+
+            team_name = teams_map.get(wf_team, wf_team)
+            stage_count = len(data.get("stages", []))
+            entries.append(
+                f"  - {data.get('name', fname[:-5])} (ID: {data.get('id', fname[:-5])})\n"
+                f"    Description: {data.get('description', '(none)')}\n"
+                f"    Team: {team_name}\n"
+                f"    Stages: {stage_count} | Version: {data.get('version', 1)}"
+            )
+
+        if not entries:
+            if filter_team_id:
+                return _text_response(f"No workflows found for team '{team_filter}'.")
+            return _text_response("No workflows found.")
+
+        header = f"Workflows ({len(entries)} total):\n"
+        return _text_response(header + "\n".join(entries))
+
+    except Exception as e:
+        return _error_response(f"Failed to list workflows: {str(e)}")
+
+
+@tool(
+    "read_workflow",
+    "Read the full content of a workflow including all stages, rules, and failure handling. "
+    "Use list_workflows first to find the right workflow, then read it by name or ID.",
+    {"name_or_id": str},
+)
+async def read_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Read a workflow's full JSON content."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found in /working/workflows/.")
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        return _text_response(json.dumps(data, indent=2))
+
+    except Exception as e:
+        return _error_response(f"Failed to read workflow: {str(e)}")
+
+
+@tool(
+    "update_workflow",
+    "Update an existing workflow. Can modify description, stages, rules, or failure handling. "
+    "Increments the version number automatically. "
+    "stages and rules must be JSON strings if provided.",
+    {
+        "name_or_id": str,
+        "description": str,
+        "stages": str,
+        "rules": str,
+        "on_failure": str,
+    },
+)
+async def update_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update a workflow with partial changes."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found.")
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        old_version = data.get("version", 1)
+
+        # Apply provided fields
+        description = args.get("description", "").strip()
+        if description:
+            data["description"] = description
+
+        stages_str = args.get("stages", "").strip()
+        if stages_str:
+            try:
+                stages = json.loads(stages_str)
+                if isinstance(stages, list):
+                    data["stages"] = stages
+            except json.JSONDecodeError:
+                return _error_response("stages must be valid JSON.")
+
+        rules_str = args.get("rules", "").strip()
+        if rules_str:
+            try:
+                rules = json.loads(rules_str)
+                if isinstance(rules, list):
+                    data["rules"] = rules
+            except json.JSONDecodeError:
+                data["rules"] = [r.strip() for r in rules_str.split(",") if r.strip()]
+
+        on_failure = args.get("on_failure", "").strip()
+        if on_failure:
+            data["on_failure"] = on_failure
+
+        data["version"] = old_version + 1
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return _text_response(
+            f"Updated workflow '{data.get('name', name_or_id)}' "
+            f"(v{old_version} → v{data['version']})"
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to update workflow: {str(e)}")
+
+
+@tool(
+    "delete_workflow",
+    "Delete a workflow. Removes the workflow file and unlinks it from its team.",
+    {"name_or_id": str},
+)
+async def delete_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete a workflow and remove it from its team."""
+    try:
+        name_or_id = args.get("name_or_id", "").strip()
+        if not name_or_id:
+            return _error_response("name_or_id is required.")
+
+        filepath = _find_workflow(name_or_id)
+        if not filepath:
+            return _error_response(f"Workflow '{name_or_id}' not found.")
+
+        # Read workflow to get team reference
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        workflow_id = data.get("id", "")
+        workflow_name = data.get("name", name_or_id)
+        team_id = data.get("team", "")
+
+        # Remove from team's workflows array
+        if team_id:
+            try:
+                team_data = load_team_file(_working_dir, team_id)
+                wf_list = team_data.get("workflows", [])
+                if workflow_id in wf_list:
+                    wf_list.remove(workflow_id)
+                    update_team(_working_dir, team_id, {"workflows": wf_list})
+            except Exception:
+                pass  # Non-critical — file deletion is the primary action
+
+        # Delete the workflow file
+        os.remove(filepath)
+
+        return _text_response(f"Deleted workflow '{workflow_name}' ({workflow_id}).")
+
+    except Exception as e:
+        return _error_response(f"Failed to delete workflow: {str(e)}")
+
+
+@tool(
+    "assign_workflow",
+    "Assign a workflow to a different team. Moves the team reference from the old team to the new one.",
+    {"workflow_name_or_id": str, "team_name_or_id": str},
+)
+async def assign_workflow_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Move a workflow from one team to another."""
+    try:
+        wf_identifier = args.get("workflow_name_or_id", "").strip()
+        team_identifier = args.get("team_name_or_id", "").strip()
+
+        if not wf_identifier:
+            return _error_response("workflow_name_or_id is required.")
+        if not team_identifier:
+            return _error_response("team_name_or_id is required.")
+
+        filepath = _find_workflow(wf_identifier)
+        if not filepath:
+            return _error_response(f"Workflow '{wf_identifier}' not found.")
+
+        # Resolve target team
+        target_team = get_team_by_name(_working_dir, team_identifier)
+        if not target_team:
+            target_team = get_team_by_id(_working_dir, team_identifier)
+        if not target_team:
+            return _error_response(f"Team '{team_identifier}' not found.")
+
+        # Load workflow
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        workflow_id = data.get("id", "")
+        old_team_id = data.get("team", "")
+
+        # Remove from old team
+        if old_team_id:
+            try:
+                old_team_data = load_team_file(_working_dir, old_team_id)
+                wf_list = old_team_data.get("workflows", [])
+                if workflow_id in wf_list:
+                    wf_list.remove(workflow_id)
+                    update_team(_working_dir, old_team_id, {"workflows": wf_list})
+            except Exception:
+                pass
+
+        # Add to new team
+        try:
+            new_team_data = load_team_file(_working_dir, target_team["id"])
+            wf_list = new_team_data.get("workflows", [])
+            if workflow_id not in wf_list:
+                wf_list.append(workflow_id)
+                update_team(_working_dir, target_team["id"], {"workflows": wf_list})
+        except Exception:
+            pass
+
+        # Update workflow's team field
+        data["team"] = target_team["id"]
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return _text_response(
+            f"Assigned workflow '{data.get('name', wf_identifier)}' to team '{target_team['name']}'."
+        )
+
+    except Exception as e:
+        return _error_response(f"Failed to assign workflow: {str(e)}")
+
+
+# ─── Gemini Subagent Tool (Phase 11) ────────────────────────────────
+
+
+import logging as _logging
+
+_gemini_logger = _logging.getLogger(__name__)
+
+
+@tool(
+    "gemini_task",
+    "Delegate a task to a Gemini-powered subagent. The subagent runs prompt-in/text-out "
+    "with no tool access. Use this tool when the target agent's platform is 'gemini'. "
+    "After receiving the response, you (Clyde) should handle any file operations "
+    "(Write, Edit, etc.) with the returned content.",
+    {
+        "agent_name": str,
+        "task": str,
+    },
+)
+async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delegate a task to a Gemini subagent and return the response."""
+    try:
+        agent_name = args.get("agent_name", "").strip()
+        task = args.get("task", "").strip()
+
+        if not agent_name:
+            return _error_response("agent_name is required.")
+        if not task:
+            return _error_response("task is required.")
+
+        # Look up agent in registry
+        agent = get_agent_by_name(_working_dir, agent_name)
+        if not agent:
+            return _error_response(f"Agent '{agent_name}' not found in registry.")
+
+        # Validate this is a Gemini agent
+        platform = agent.get("platform", "claude")
+        if platform != "gemini":
+            return _error_response(
+                f"Agent '{agent_name}' is a {platform} agent, not Gemini. "
+                f"Use the Task tool for Claude agents."
+            )
+
+        # Resolve model ID
+        model_tier = agent.get("model", "gemini-flash")
+        model_id = GEMINI_MODEL_ID_MAP.get(model_tier)
+        if not model_id:
+            return _error_response(
+                f"Unknown Gemini model tier '{model_tier}'. "
+                f"Valid tiers: {', '.join(GEMINI_MODEL_ID_MAP.keys())}"
+            )
+
+        # Load system prompt
+        prompt_path = agent.get("system_prompt_path", "")
+        system_prompt = ""
+        if prompt_path:
+            abs_path = os.path.join(_working_dir, prompt_path.lstrip("/"))
+            if os.path.exists(abs_path):
+                with open(abs_path, "r") as f:
+                    system_prompt = f.read()
+
+        # Append agent memory if available
+        memory_path = agent.get("memory_path", "")
+        if memory_path:
+            abs_mem = os.path.join(_working_dir, memory_path.lstrip("/"))
+            if os.path.exists(abs_mem):
+                with open(abs_mem, "r") as f:
+                    memory_content = f.read().strip()
+                if memory_content:
+                    system_prompt += (
+                        "\n\n## Your Memory (Accumulated Knowledge)\n\n"
+                        "The following is your accumulated knowledge from previous tasks. "
+                        "Use this context to inform your current work.\n\n"
+                        f"{memory_content}"
+                    )
+
+        # Emit "started" activity event to frontend
+        agent_display_name = agent.get("name", agent_name)
+        agent_registry_id = agent.get("id", "")
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "started",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "role": agent.get("role", "Gemini Subagent"),
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist started event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="started",
+                    description="Gemini agent started",
+                    metadata={"platform": "gemini", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Call Gemini API
+        result = await call_gemini(
+            model=model_id,
+            system_prompt=system_prompt,
+            user_prompt=task,
+        )
+
+        # Emit "stopped" activity event to frontend
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "stopped",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist stopped event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="stopped",
+                    description="Gemini agent stopped",
+                    metadata={"platform": "gemini", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Save cost record to Supabase for cost tracking
+        _gemini_logger.info(
+            f"[GEMINI] Cost tracking: session_id={_session_id!r}, "
+            f"cost=${result['cost_usd']:.6f}"
+        )
+        if _session_id:
+            try:
+                await save_message(
+                    session_id=_session_id,
+                    role="agent",
+                    content=result["content"][:500],
+                    agent_name=agent.get("name", agent_name),
+                    token_count=result["input_tokens"] + result["output_tokens"],
+                    cost_usd=result["cost_usd"],
+                    metadata={
+                        "platform": "gemini",
+                        "model": result["model"],
+                        "model_tier": model_tier,
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                    },
+                )
+                _gemini_logger.info("[GEMINI] Cost record saved successfully")
+            except Exception as e:
+                _gemini_logger.error(f"[GEMINI] Failed to save cost record: {e}", exc_info=True)
+        else:
+            _gemini_logger.warning("[GEMINI] No session_id — cost record NOT saved")
+
+        # Return response to Clyde
+        return _text_response(
+            f"**{agent.get('name', agent_name)}** ({model_tier}) responded:\n\n"
+            f"{result['content']}\n\n"
+            f"---\n"
+            f"Tokens: {result['input_tokens']} in / {result['output_tokens']} out | "
+            f"Cost: ${result['cost_usd']:.6f}"
+        )
+
+    except Exception as e:
+        return _error_response(f"Gemini task failed: {str(e)}")
+
+
+# ─── Phase 12: OpenAI Subagent ─────────────────────────────────────
+
+_openai_logger = _logging.getLogger("services.openai_client")
+
+
+@tool(
+    "openai_task",
+    "Delegate a task to an OpenAI-powered subagent. The subagent runs prompt-in/text-out "
+    "with no tool access. Use this tool when the target agent's platform is 'openai'. "
+    "After receiving the response, you (Clyde) should handle any file operations "
+    "(Write, Edit, etc.) with the returned content.",
+    {
+        "agent_name": str,
+        "task": str,
+    },
+)
+async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delegate a task to an OpenAI subagent and return the response."""
+    try:
+        agent_name = args.get("agent_name", "").strip()
+        task = args.get("task", "").strip()
+
+        if not agent_name:
+            return _error_response("agent_name is required.")
+        if not task:
+            return _error_response("task is required.")
+
+        # Look up agent in registry
+        agent = get_agent_by_name(_working_dir, agent_name)
+        if not agent:
+            return _error_response(f"Agent '{agent_name}' not found in registry.")
+
+        # Validate this is an OpenAI agent
+        platform = agent.get("platform", "claude")
+        if platform != "openai":
+            return _error_response(
+                f"Agent '{agent_name}' is a {platform} agent, not OpenAI. "
+                f"Use the Task tool for Claude agents or gemini_task for Gemini agents."
+            )
+
+        # Resolve model ID
+        model_tier = agent.get("model", "gpt-5.4-mini")
+        model_id = OPENAI_MODEL_ID_MAP.get(model_tier)
+        if not model_id:
+            return _error_response(
+                f"Unknown OpenAI model tier '{model_tier}'. "
+                f"Valid tiers: {', '.join(OPENAI_MODEL_ID_MAP.keys())}"
+            )
+
+        # Load system prompt
+        prompt_path = agent.get("system_prompt_path", "")
+        system_prompt = ""
+        if prompt_path:
+            abs_path = os.path.join(_working_dir, prompt_path.lstrip("/"))
+            if os.path.exists(abs_path):
+                with open(abs_path, "r") as f:
+                    system_prompt = f.read()
+
+        # Append agent memory if available
+        memory_path = agent.get("memory_path", "")
+        if memory_path:
+            abs_mem = os.path.join(_working_dir, memory_path.lstrip("/"))
+            if os.path.exists(abs_mem):
+                with open(abs_mem, "r") as f:
+                    memory_content = f.read().strip()
+                if memory_content:
+                    system_prompt += (
+                        "\n\n## Your Memory (Accumulated Knowledge)\n\n"
+                        "The following is your accumulated knowledge from previous tasks. "
+                        "Use this context to inform your current work.\n\n"
+                        f"{memory_content}"
+                    )
+
+        # Emit "started" activity event to frontend
+        agent_display_name = agent.get("name", agent_name)
+        agent_registry_id = agent.get("id", "")
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "started",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "role": agent.get("role", "OpenAI Subagent"),
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist started event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="started",
+                    description="OpenAI agent started",
+                    metadata={"platform": "openai", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Call OpenAI API
+        result = await call_openai(
+            model=model_id,
+            system_prompt=system_prompt,
+            user_prompt=task,
+        )
+
+        # Emit "stopped" activity event to frontend
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "stopped",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist stopped event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="stopped",
+                    description="OpenAI agent stopped",
+                    metadata={"platform": "openai", "model": model_tier},
+                )
+            except Exception:
+                pass
+
+        # Save cost record to Supabase for cost tracking
+        _openai_logger.info(
+            f"[OPENAI] Cost tracking: session_id={_session_id!r}, "
+            f"cost=${result['cost_usd']:.6f}"
+        )
+        if _session_id:
+            try:
+                await save_message(
+                    session_id=_session_id,
+                    role="agent",
+                    content=result["content"][:500],
+                    agent_name=agent.get("name", agent_name),
+                    token_count=result["input_tokens"] + result["output_tokens"],
+                    cost_usd=result["cost_usd"],
+                    metadata={
+                        "platform": "openai",
+                        "model": result["model"],
+                        "model_tier": model_tier,
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                    },
+                )
+                _openai_logger.info("[OPENAI] Cost record saved successfully")
+            except Exception as e:
+                _openai_logger.error(f"[OPENAI] Failed to save cost record: {e}", exc_info=True)
+        else:
+            _openai_logger.warning("[OPENAI] No session_id — cost record NOT saved")
+
+        # Return response to Clyde
+        return _text_response(
+            f"**{agent.get('name', agent_name)}** ({model_tier}) responded:\n\n"
+            f"{result['content']}\n\n"
+            f"---\n"
+            f"Tokens: {result['input_tokens']} in / {result['output_tokens']} out | "
+            f"Cost: ${result['cost_usd']:.6f}"
+        )
+
+    except Exception as e:
+        return _error_response(f"OpenAI task failed: {str(e)}")
+
+
+# ─── Visualisation Tools (Phase 13) ──────────────────────────────
+
+
+@tool(
+    "create_visualisation",
+    "Render arbitrary self-contained HTML/SVG content as an inline visualisation in the "
+    "chat. Use this for complex custom layouts, full HTML pages, or intricate SVG graphics "
+    "that require complete control over the markup. For standard charts, prefer create_visual "
+    "instead. The content renders in a sandboxed iframe with a dark theme background. "
+    "Maximum 50,000 characters.",
+    {
+        "title": str,
+        "html_content": str,
+        "description": str,
+    },
+)
+async def create_visualisation_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a legacy HTML/SVG visualisation rendered in a sandboxed iframe."""
+    global _pending_visualizations
+    try:
+        title = args.get("title", "").strip()
+        html_content = args.get("html_content", "").strip()
+        description = args.get("description", "").strip()
+
+        if not title:
+            return _error_response("title is required.")
+        if not html_content:
+            return _error_response("html_content is required.")
+        if len(html_content) > 50_000:
+            return _error_response(
+                f"html_content is {len(html_content)} chars — maximum is 50,000."
+            )
+
+        vis_id = str(uuid.uuid4())
+        payload: dict[str, Any] = {
+            "vis_id": vis_id,
+            "title": title,
+            "html_content": html_content,
+        }
+        if description:
+            payload["description"] = description
+
+        _pending_visualizations.append(payload)
+
+        # Push to frontend immediately via WebSocket
+        if _ws:
+            try:
+                await _ws.send_json({"type": "visualization", "data": payload})
+            except Exception:
+                pass  # WebSocket may be closed; visualisation is still persisted
+
+        return _text_response(
+            f"Visualisation **{title}** rendered successfully (id: `{vis_id}`)."
+        )
+
+    except Exception as e:
+        return _error_response(f"create_visualisation failed: {str(e)}")
+
+
+@tool(
+    "create_visual",
+    "Create an inline data visualisation in the chat using either Chart.js (chart mode) "
+    "or custom JavaScript (code mode). This is the preferred tool for creating visual "
+    "content.\n\n"
+    "**Chart mode** (`mode: \"chart\"`): Provide a Chart.js chart type and data/options "
+    "objects. Supported types: bar, line, pie, doughnut, scatter, radar, polarArea, bubble.\n\n"
+    "**Code mode** (`mode: \"code\"`): Write JavaScript that runs in a container with "
+    "pre-loaded globals: canvas, ctx, svg, root, THEME, Chart, plus helpers svgEl(), "
+    "svgText(), resizeCanvas(). Use this for custom diagrams, flowcharts, interactive "
+    "SVG, or anything beyond standard charts.\n\n"
+    "The THEME object provides dark palette colours: accent (#6366f1 indigo), "
+    "secondary (#22d3ee cyan), tertiary (#f97316 orange), plus a palette[] array of 8 "
+    "colours. Always use THEME colours for consistency.",
+    {
+        "title": str,
+        "mode": str,
+        "chart_type": str,
+        "data": str,
+        "options": str,
+        "code": str,
+        "description": str,
+    },
+)
+async def create_visual_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a container-based visualisation (Chart.js chart or custom JS code)."""
+    global _pending_visuals
+    try:
+        title = args.get("title", "").strip()
+        mode = args.get("mode", "").strip().lower()
+        description = args.get("description", "").strip()
+
+        if not title:
+            return _error_response("title is required.")
+        if mode not in ("chart", "code"):
+            return _error_response("mode must be 'chart' or 'code'.")
+
+        vis_id = str(uuid.uuid4())
+        payload: dict[str, Any] = {
+            "vis_id": vis_id,
+            "title": title,
+            "mode": mode,
+        }
+        if description:
+            payload["description"] = description
+
+        if mode == "chart":
+            chart_type = args.get("chart_type", "").strip().lower()
+            data_raw = args.get("data", "")
+            options_raw = args.get("options", "")
+
+            valid_types = {
+                "bar", "line", "pie", "doughnut", "scatter",
+                "radar", "polarArea", "bubble",
+            }
+            if chart_type not in valid_types:
+                return _error_response(
+                    f"chart_type must be one of: {', '.join(sorted(valid_types))}."
+                )
+
+            # Parse data JSON
+            if isinstance(data_raw, str):
+                try:
+                    data_obj = json.loads(data_raw) if data_raw else {}
+                except json.JSONDecodeError as e:
+                    return _error_response(f"data is not valid JSON: {e}")
+            else:
+                data_obj = data_raw or {}
+
+            # Parse options JSON (optional)
+            options_obj = {}
+            if options_raw:
+                if isinstance(options_raw, str):
+                    try:
+                        options_obj = json.loads(options_raw)
+                    except json.JSONDecodeError as e:
+                        return _error_response(f"options is not valid JSON: {e}")
+                else:
+                    options_obj = options_raw
+
+            # Size guard
+            combined = json.dumps(data_obj) + json.dumps(options_obj)
+            if len(combined) > 20_000:
+                return _error_response(
+                    f"Chart data + options is {len(combined)} chars — maximum is 20,000."
+                )
+
+            payload["chart_type"] = chart_type
+            payload["data"] = data_obj
+            if options_obj:
+                payload["options"] = options_obj
+
+        elif mode == "code":
+            code = args.get("code", "").strip()
+            if not code:
+                return _error_response("code is required in code mode.")
+            if len(code) > 30_000:
+                return _error_response(
+                    f"code is {len(code)} chars — maximum is 30,000."
+                )
+            payload["code"] = code
+
+        _pending_visuals.append(payload)
+
+        # Push to frontend immediately via WebSocket
+        if _ws:
+            try:
+                await _ws.send_json({"type": "visual", "data": payload})
+            except Exception:
+                pass
+
+        return _text_response(
+            f"Visual **{title}** ({mode} mode) rendered successfully (id: `{vis_id}`)."
+        )
+
+    except Exception as e:
+        return _error_response(f"create_visual failed: {str(e)}")
+
+
 # ─── Create the in-process MCP server (all tools) ─────────────────
 
 
@@ -2452,5 +3550,19 @@ registry_mcp_server = create_sdk_mcp_server(
         delete_integration_tool,
         assign_integration_tool,
         call_integration_tool,
+        # Phase 10: Workflows
+        create_workflow_tool,
+        list_workflows_tool,
+        read_workflow_tool,
+        update_workflow_tool,
+        delete_workflow_tool,
+        assign_workflow_tool,
+        # Phase 11: Gemini Subagent
+        gemini_task_tool,
+        # Phase 12: OpenAI Subagent
+        openai_task_tool,
+        # Phase 13: Visualizations
+        create_visualisation_tool,
+        create_visual_tool,
     ],
 )

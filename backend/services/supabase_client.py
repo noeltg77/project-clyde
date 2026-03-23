@@ -43,6 +43,7 @@ async def save_message(
     token_count: int = 0,
     cost_usd: float = 0.0,
     metadata: dict | None = None,
+    created_at: str | None = None,
 ) -> dict:
     client = get_supabase()
     row: dict = {
@@ -57,6 +58,8 @@ async def save_message(
     }
     if embedding:
         row["embedding"] = embedding
+    if created_at:
+        row["created_at"] = created_at
     result = client.table("chat_messages").insert(row).execute()
     return result.data[0]
 
@@ -95,7 +98,10 @@ async def search_messages(
 
 
 async def get_sessions(limit: int = 50) -> list[dict]:
-    """List all sessions with message count, last message preview, and total cost."""
+    """List all sessions with message count, last message preview, and total cost.
+
+    Uses batch queries instead of per-session lookups to avoid N+1 performance issues.
+    """
     client = get_supabase()
     # Fetch sessions ordered by most recently updated
     sessions_result = (
@@ -106,40 +112,38 @@ async def get_sessions(limit: int = 50) -> list[dict]:
         .execute()
     )
     sessions = sessions_result.data
+    if not sessions:
+        return []
 
-    # Enrich each session with message stats
+    session_ids = [s["id"] for s in sessions]
+
+    # Batch fetch all messages for these sessions (only the fields we need)
+    all_messages = (
+        client.table("chat_messages")
+        .select("session_id, content, cost_usd, created_at")
+        .in_("session_id", session_ids)
+        .order("created_at", desc=True)
+        .execute()
+    ).data
+
+    # Build per-session stats in a single pass
+    msg_counts: dict[str, int] = defaultdict(int)
+    total_costs: dict[str, float] = defaultdict(float)
+    last_previews: dict[str, str] = {}
+
+    for msg in all_messages:
+        sid = msg["session_id"]
+        msg_counts[sid] += 1
+        total_costs[sid] += msg.get("cost_usd") or 0
+        if sid not in last_previews:
+            # First message per session is the latest (ordered desc)
+            last_previews[sid] = (msg.get("content") or "")[:80]
+
     for session in sessions:
         sid = session["id"]
-        # Get message count and total cost
-        msgs = (
-            client.table("chat_messages")
-            .select("content, role, cost_usd, created_at")
-            .eq("session_id", sid)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        count_result = (
-            client.table("chat_messages")
-            .select("id", count="exact")
-            .eq("session_id", sid)
-            .execute()
-        )
-        cost_result = (
-            client.table("chat_messages")
-            .select("cost_usd")
-            .eq("session_id", sid)
-            .execute()
-        )
-        session["message_count"] = count_result.count or 0
-        session["total_cost"] = sum(
-            (m.get("cost_usd") or 0) for m in cost_result.data
-        )
-        if msgs.data:
-            last = msgs.data[0]
-            session["last_message_preview"] = (last.get("content") or "")[:80]
-        else:
-            session["last_message_preview"] = ""
+        session["message_count"] = msg_counts.get(sid, 0)
+        session["total_cost"] = total_costs.get(sid, 0)
+        session["last_message_preview"] = last_previews.get(sid, "")
 
     return sessions
 
@@ -349,7 +353,7 @@ async def get_cost_summary() -> dict:
     # Fetch all messages from the last 30 days with cost data
     result = (
         client.table("chat_messages")
-        .select("cost_usd, agent_name, created_at")
+        .select("cost_usd, agent_name, created_at, metadata")
         .gte("created_at", thirty_days_ago.isoformat())
         .execute()
     )
@@ -363,6 +367,12 @@ async def get_cost_summary() -> dict:
         lambda: {"cost_usd": 0.0, "message_count": 0}
     )
     daily_costs: dict[str, float] = defaultdict(float)
+    daily_platform_costs: dict[str, dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    platform_costs: dict[str, dict] = defaultdict(
+        lambda: {"cost_usd": 0.0, "message_count": 0}
+    )
 
     for msg in messages:
         cost = msg.get("cost_usd") or 0.0
@@ -371,6 +381,8 @@ async def get_cost_summary() -> dict:
 
         created_at = msg.get("created_at", "")
         agent = msg.get("agent_name") or "Unknown"
+        metadata = msg.get("metadata") or {}
+        platform = metadata.get("platform", "claude")
 
         try:
             msg_time = datetime.fromisoformat(
@@ -382,6 +394,7 @@ async def get_cost_summary() -> dict:
         # Date aggregates
         date_key = msg_time.strftime("%Y-%m-%d")
         daily_costs[date_key] += cost
+        daily_platform_costs[date_key][platform] += cost
 
         if msg_time >= today_start:
             today_usd += cost
@@ -393,6 +406,10 @@ async def get_cost_summary() -> dict:
         # Per-agent
         agent_costs[agent]["cost_usd"] += cost
         agent_costs[agent]["message_count"] += 1
+
+        # Per-platform
+        platform_costs[platform]["cost_usd"] += cost
+        platform_costs[platform]["message_count"] += 1
 
     # Build response
     by_agent = [
@@ -406,15 +423,30 @@ async def get_cost_summary() -> dict:
         )
     ]
 
-    # Build daily breakdown (last 14 days)
+    by_platform = [
+        {
+            "platform": name,
+            "cost_usd": round(data["cost_usd"], 4),
+            "message_count": data["message_count"],
+        }
+        for name, data in sorted(
+            platform_costs.items(), key=lambda x: x[1]["cost_usd"], reverse=True
+        )
+    ]
+
+    # Build daily breakdown (last 14 days) with per-platform split
     daily_breakdown = []
     for i in range(14):
         d = today_start - timedelta(days=13 - i)
         date_key = d.strftime("%Y-%m-%d")
         cost_usd = daily_costs.get(date_key, 0.0)
+        platform_split = daily_platform_costs.get(date_key, {})
         daily_breakdown.append({
             "date": date_key,
             "cost_usd": round(cost_usd, 4),
+            "claude": round(platform_split.get("claude", 0.0), 4),
+            "gemini": round(platform_split.get("gemini", 0.0), 4),
+            "openai": round(platform_split.get("openai", 0.0), 4),
         })
 
     return {
@@ -422,6 +454,7 @@ async def get_cost_summary() -> dict:
         "week_usd": round(week_usd, 4),
         "month_usd": round(month_usd, 4),
         "by_agent": by_agent,
+        "by_platform": by_platform,
         "daily_breakdown": daily_breakdown,
     }
 
