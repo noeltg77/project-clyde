@@ -1,4 +1,6 @@
 {
+  "clyde_model": "sonnet",
+  "subagent_default_model": "sonnet",
   "self_edit_enabled": true,
   "concurrency_cap": 5,
   "max_team_size": 3,
