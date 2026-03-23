@@ -73,7 +73,7 @@ svg{display:block;max-width:100%;height:auto}
 <canvas id="canvas" width="600" height="400"></canvas>
 <svg id="svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400"></svg>
 <div id="root"></div>
-<script>${chartJsSource}</script>
+<script>${chartJsSource}<\/script>
 <script>
 ${THEME_JS}
 ${HELPERS_JS}
@@ -96,20 +96,18 @@ try{
   errDiv.textContent='Render error: '+(err.message||String(err));
   root.appendChild(errDiv);
 }
-</script>
+<\/script>
 <script>
 (function(){
   var id='${visId}';
   function reportHeight(){
     var h=document.body.scrollHeight;
-    // Also check canvas bounding rect in case it's larger than scrollHeight
     var cvs=document.getElementById('canvas');
     if(cvs&&cvs.style.display!=='none'){
       var r=cvs.getBoundingClientRect();
-      var ch=r.bottom+16; // include bottom padding
+      var ch=r.bottom+16;
       if(ch>h)h=ch;
     }
-    // Check SVG bounding rect
     var s=document.getElementById('svg');
     if(s&&s.style.display!=='none'){
       var sr=s.getBoundingClientRect();
@@ -119,7 +117,6 @@ try{
     parent.postMessage({type:'vis-height',id:id,height:Math.ceil(h)},'*');
   }
   reportHeight();
-  // Re-report after Chart.js finishes rendering (async)
   setTimeout(reportHeight,100);
   setTimeout(reportHeight,500);
   new ResizeObserver(function(){
@@ -169,7 +166,7 @@ try{
     if(dataUrl)parent.postMessage({type:'capture-result',id:id,dataUrl:dataUrl},'*');
   });
 })();
-</script></body></html>`;
+<\/script></body></html>`;
 }
 
 interface Props {
@@ -180,11 +177,9 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [iframeHeight, setIframeHeight] = useState(300);
   const [isVisible, setIsVisible] = useState(false);
-  const [chartJsLoaded, setChartJsLoaded] = useState(false);
+  const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const blobUrlRef = useRef<string | null>(null);
-  const chartJsRef = useRef<string>("");
 
   // Lazy loading via IntersectionObserver
   useEffect(() => {
@@ -203,33 +198,19 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Load Chart.js bundle when visible
+  // Load Chart.js bundle and build srcDoc when visible
   useEffect(() => {
     if (!isVisible) return;
     let cancelled = false;
-    getChartJsSource().then((src) => {
+    getChartJsSource().then((chartJs) => {
       if (!cancelled) {
-        chartJsRef.current = src;
-        setChartJsLoaded(true);
+        setSrcDoc(buildIframeSrcDoc(visual.id, chartJs, visual));
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [isVisible]);
-
-  // Build blob URL when Chart.js is loaded
-  useEffect(() => {
-    if (!chartJsLoaded) return;
-    const html = buildIframeSrcDoc(visual.id, chartJsRef.current, visual);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    blobUrlRef.current = url;
-    if (iframeRef.current) {
-      iframeRef.current.src = url;
-    }
-    return () => URL.revokeObjectURL(url);
-  }, [chartJsLoaded, visual]);
+  }, [isVisible, visual]);
 
   // Listen for height reports and capture results
   useEffect(() => {
@@ -254,9 +235,8 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
   }, [visual.id, visual.title]);
 
   const handleDownloadHtml = useCallback(() => {
-    if (!chartJsLoaded) return;
-    const html = buildIframeSrcDoc(visual.id, chartJsRef.current, visual);
-    const blob = new Blob([html], { type: "text/html" });
+    if (!srcDoc) return;
+    const blob = new Blob([srcDoc], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -265,7 +245,7 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [chartJsLoaded, visual]);
+  }, [srcDoc, visual.title]);
 
   const handleCapturePng = useCallback(() => {
     iframeRef.current?.contentWindow?.postMessage(
@@ -312,9 +292,10 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
       {/* Content */}
       {!collapsed && (
         <div style={{ height: iframeHeight }}>
-          {isVisible && chartJsLoaded ? (
+          {isVisible && srcDoc ? (
             <iframe
               ref={iframeRef}
+              srcDoc={srcDoc}
               sandbox="allow-scripts"
               style={{ width: "100%", height: "100%", border: "none" }}
               title={visual.title}

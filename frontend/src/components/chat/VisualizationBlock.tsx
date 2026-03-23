@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, ChevronDown, ChevronUp, Download, Code } from "lucide-react";
 import type { VisualizationData } from "@/stores/chat-store";
 
@@ -19,6 +19,8 @@ const HTML_TEMPLATE_SUFFIX = `<script>
     parent.postMessage({type:'vis-height',id:id,height:h},'*');
   }
   reportHeight();
+  setTimeout(reportHeight,100);
+  setTimeout(reportHeight,500);
   new ResizeObserver(function(){
     requestAnimationFrame(reportHeight);
   }).observe(document.body);
@@ -82,7 +84,12 @@ export const VisualizationBlock = memo(function VisualizationBlock({
   const [isVisible, setIsVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const blobUrlRef = useRef<string | null>(null);
+
+  // Build srcDoc content (memoized)
+  const srcDoc = useMemo(
+    () => buildSrcDoc(visualization.id, visualization.htmlContent),
+    [visualization.id, visualization.htmlContent]
+  );
 
   // Lazy loading via IntersectionObserver
   useEffect(() => {
@@ -100,19 +107,6 @@ export const VisualizationBlock = memo(function VisualizationBlock({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  // Build blob URL when visible
-  useEffect(() => {
-    if (!isVisible) return;
-    const html = buildSrcDoc(visualization.id, visualization.htmlContent);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    blobUrlRef.current = url;
-    if (iframeRef.current) {
-      iframeRef.current.src = url;
-    }
-    return () => URL.revokeObjectURL(url);
-  }, [isVisible, visualization.id, visualization.htmlContent]);
 
   // Listen for height reports and capture results
   useEffect(() => {
@@ -197,6 +191,7 @@ export const VisualizationBlock = memo(function VisualizationBlock({
           {isVisible ? (
             <iframe
               ref={iframeRef}
+              srcDoc={srcDoc}
               sandbox="allow-scripts"
               style={{ width: "100%", height: "100%", border: "none" }}
               title={visualization.title}
