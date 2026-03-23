@@ -66,7 +66,7 @@ function buildIframeSrcDoc(
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>*{margin:0;padding:0;box-sizing:border-box}
-body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;padding:16px}
+body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:16px}
 canvas{display:block;max-width:100%}
 svg{display:block;max-width:100%;height:auto}
 #root{display:none}</style></head><body>
@@ -102,12 +102,31 @@ try{
   var id='${visId}';
   function reportHeight(){
     var h=document.body.scrollHeight;
-    parent.postMessage({type:'vis-height',id:id,height:h},'*');
+    // Also check canvas bounding rect in case it's larger than scrollHeight
+    var cvs=document.getElementById('canvas');
+    if(cvs&&cvs.style.display!=='none'){
+      var r=cvs.getBoundingClientRect();
+      var ch=r.bottom+16; // include bottom padding
+      if(ch>h)h=ch;
+    }
+    // Check SVG bounding rect
+    var s=document.getElementById('svg');
+    if(s&&s.style.display!=='none'){
+      var sr=s.getBoundingClientRect();
+      var sh=sr.bottom+16;
+      if(sh>h)h=sh;
+    }
+    parent.postMessage({type:'vis-height',id:id,height:Math.ceil(h)},'*');
   }
   reportHeight();
+  // Re-report after Chart.js finishes rendering (async)
+  setTimeout(reportHeight,100);
+  setTimeout(reportHeight,500);
   new ResizeObserver(function(){
     requestAnimationFrame(reportHeight);
   }).observe(document.body);
+  if(document.getElementById('canvas'))
+    new ResizeObserver(function(){requestAnimationFrame(reportHeight);}).observe(document.getElementById('canvas'));
   window.addEventListener('message',function(e){
     if(!e.data||e.data.type!=='capture-png'||e.data.id!==id)return;
     var dataUrl=null;
@@ -219,7 +238,7 @@ export const VisualBlock = memo(function VisualBlock({ visual }: Props) {
       if (e.data.id !== visual.id) return;
 
       if (e.data.type === "vis-height") {
-        const h = Math.min(Math.max(e.data.height, 100), 500);
+        const h = Math.min(Math.max(e.data.height, 100), 800);
         setIframeHeight(h);
       } else if (e.data.type === "capture-result" && e.data.dataUrl) {
         const a = document.createElement("a");

@@ -8,7 +8,7 @@ import type { VisualizationData } from "@/stores/chat-store";
 const HTML_TEMPLATE_PREFIX = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>*{margin:0;padding:0;box-sizing:border-box}
-body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;padding:16px}
+body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:16px}
 svg{max-width:100%;height:auto}</style></head><body>`;
 
 const HTML_TEMPLATE_SUFFIX = `<script>
@@ -121,7 +121,7 @@ export const VisualizationBlock = memo(function VisualizationBlock({
       if (e.data.id !== visualization.id) return;
 
       if (e.data.type === "vis-height") {
-        const h = Math.min(Math.max(e.data.height, 100), 500);
+        const h = Math.min(Math.max(e.data.height, 100), 800);
         setIframeHeight(h);
       } else if (e.data.type === "capture-result" && e.data.dataUrl) {
         const a = document.createElement("a");
