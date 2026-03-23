@@ -69,8 +69,9 @@ function buildIframeSrcDoc(
 body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:16px}
 canvas{display:block;max-width:100%}
 svg{display:block;max-width:100%;height:auto}
+#chart-container{position:relative;width:100%}
 #root{display:none}</style></head><body>
-<canvas id="canvas" width="600" height="400"></canvas>
+<div id="chart-container"><canvas id="canvas"></canvas></div>
 <svg id="svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400"></svg>
 <div id="root"></div>
 <script>${chartJsSource}<\/script>
