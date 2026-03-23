@@ -155,8 +155,25 @@ export function ChatContainer() {
               // Extract persisted steps from metadata
               const meta = m.metadata || {};
               const steps = (meta.steps as MessageStep[] | undefined) || undefined;
-              const visualizations = (meta.visualizations as VisualizationData[] | undefined) || undefined;
-              const visuals = (meta.visuals as VisualConfig[] | undefined) || undefined;
+              // Map persisted snake_case fields to camelCase types
+              const rawViz = meta.visualizations as Array<Record<string, unknown>> | undefined;
+              const visualizations = rawViz?.map((v) => ({
+                id: (v.vis_id || v.id) as string,
+                title: v.title as string,
+                htmlContent: (v.html_content || v.htmlContent) as string,
+                description: (v.description as string) || undefined,
+              })) as VisualizationData[] | undefined;
+              const rawVis = meta.visuals as Array<Record<string, unknown>> | undefined;
+              const visuals = rawVis?.map((v) => ({
+                id: (v.vis_id || v.id) as string,
+                title: v.title as string,
+                mode: v.mode as "chart" | "code",
+                chartType: (v.chart_type || v.chartType) as string | undefined,
+                data: v.data as Record<string, unknown> | undefined,
+                options: v.options as Record<string, unknown> | undefined,
+                code: v.code as string | undefined,
+                description: (v.description as string) || undefined,
+              })) as VisualConfig[] | undefined;
               return {
                 id: m.id,
                 sessionId: m.session_id,
