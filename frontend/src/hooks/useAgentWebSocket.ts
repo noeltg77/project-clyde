@@ -28,7 +28,9 @@ export type WebSocketMessage = {
     | "task_column_created"
     | "task_column_updated"
     | "task_column_deleted"
-    | "debug_prompts";
+    | "debug_prompts"
+    | "visualization"
+    | "visual";
   data: Record<string, unknown>;
 };
 
