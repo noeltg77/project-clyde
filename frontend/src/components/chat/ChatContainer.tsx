@@ -884,6 +884,7 @@ export function ChatContainer() {
       setLoadingSession(true);
       clearMessages();
       clearActivityEvents();
+      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       disconnect();
@@ -899,6 +900,7 @@ export function ChatContainer() {
       setLoadingSession(true);
       clearMessages();
       clearActivityEvents();
+      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       disconnect();

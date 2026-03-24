@@ -316,7 +316,7 @@ class TaskScheduler:
         from services.supabase_client import create_session, save_message
         from services.embeddings import generate_embedding
         from services.registry import load_registry
-        from agents.tools import registry_mcp_server, init_tools
+        from agents.tools import registry_mcp_server, init_tools, update_session_context
 
         schedule_name = schedule["name"]
         prompt = schedule["prompt"]
@@ -334,6 +334,9 @@ class TaskScheduler:
             session_title = f"[Scheduled] {schedule_name}"
             session = await create_session(session_title)
             session_id = session["id"]
+
+            # Set per-context session state so tool calls use the correct session
+            update_session_context(session_id, ws=None)
 
             # Notify connected frontends immediately
             from main import broadcast_session_created
