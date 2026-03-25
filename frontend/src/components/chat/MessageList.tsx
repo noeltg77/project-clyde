@@ -7,6 +7,7 @@ import { useAgentStore } from "@/stores/agent-store-provider";
 import { MessageBubble } from "./MessageBubble";
 import { AgentActivityBubble } from "./AgentActivityBubble";
 import { AgentAvatar } from "@/components/agents/AgentAvatar";
+import { HeroCarousel } from "@/components/layout/HeroCarousel";
 
 /* ─── Thinking indicator — shown while waiting for Clyde's first chunk ─── */
 function ThinkingIndicator() {
@@ -108,18 +109,9 @@ export function MessageList() {
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <p className="font-display text-4xl font-bold text-accent-primary mb-2">
-            CLYDE
-          </p>
-          <p className="text-sm text-text-secondary">
-            CEO — ready to work.
-          </p>
-          <p className="text-[11px] text-text-secondary/50 mt-4 max-w-sm">
-            Type a message below to begin. Clyde can read and write files in
-            the working directory, and will manage your agent team.
-          </p>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 p-6">
+          <HeroCarousel />
         </div>
       </div>
     );
