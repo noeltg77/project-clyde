@@ -5,16 +5,16 @@ import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 
 const slides = [
-  { src: "/home/home1.png", label: "AI-Powered Orchestration" },
-  { src: "/home/home2.png", label: "Autonomous Agent Workflows" },
-  { src: "/home/home3.png", label: "Real-Time Analytics" },
-  { src: "/home/home4.png", label: "Intelligent Scheduling" },
-  { src: "/home/home5.png", label: "Team Coordination" },
-  { src: "/home/home6.png", label: "Cost Optimization" },
-  { src: "/home/home7.png", label: "Performance Insights" },
+  { src: "/home/home1.png", label: "Build your team of experts" },
+  { src: "/home/home2.png", label: "Chat with full traceability" },
+  { src: "/home/home3.png", label: "Let Clyde build and maintain your skills" },
+  { src: "/home/home4.png", label: "Share a common working area" },
+  { src: "/home/home5.png", label: "Have Clyde run on schedules" },
+  { src: "/home/home6.png", label: "Track your AI costs" },
+  { src: "/home/home7.png", label: "Track and create tasks for the team" },
 ];
 
-const INTERVAL = 5000;
+const INTERVAL = 8000;
 
 // Custom cubic-bezier for buttery smooth motion
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -32,14 +32,14 @@ const variants = {
     scale: 1,
     x: 0,
     filter: "blur(0px) brightness(1)",
-    transition: { duration: 0.8, ease },
+    transition: { duration: 1.2, ease },
   },
   exit: (dir: number) => ({
     opacity: 0,
     scale: 0.95,
     x: dir > 0 ? -40 : 40,
     filter: "blur(6px) brightness(0.6)",
-    transition: { duration: 0.5, ease },
+    transition: { duration: 0.7, ease },
   }),
 };
 
@@ -53,7 +53,7 @@ const labelVariants = {
     opacity: 1,
     y: 0,
     x: 0,
-    transition: { delay: 0.35, duration: 0.5, ease },
+    transition: { delay: 0.5, duration: 0.7, ease },
   },
   exit: {
     opacity: 0,
