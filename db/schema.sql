@@ -246,7 +246,7 @@ create trigger trg_tasks_updated_at
 create table if not exists public.integrations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  type text not null check (type in ('api', 'webhook')),
+  type text not null check (type in ('api', 'webhook', 'mcp')),
   base_url text not null default '',
   method text not null default 'GET',
   auth_type text not null default 'none',

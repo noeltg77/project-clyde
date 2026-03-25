@@ -52,6 +52,7 @@ _AUTO_ALLOW_TOOLS = {
     "create_schedule", "list_schedules", "delete_schedule", "pause_schedule",
     "create_trigger", "list_triggers", "delete_trigger",
     "assign_mcp_server",
+    "create_mcp_server", "list_mcp_servers", "update_mcp_server", "delete_mcp_server",
     # Phase 5: Self-Improvement
     "review_agent_performance", "improve_agent_prompt",
     "analyse_team_gaps", "log_performance",

@@ -437,7 +437,7 @@ export function Sidebar() {
               : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary"
           }`}
         >
-          APIs / Webhooks
+          Integrations
         </button>
 
         {/* Performance */}
