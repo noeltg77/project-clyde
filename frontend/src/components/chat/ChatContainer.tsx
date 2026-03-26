@@ -896,8 +896,8 @@ export function ChatContainer() {
       window.removeEventListener("session-switch", handleSwitch);
       window.removeEventListener("new-chat", handleNewChat);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- clearActivityEvents is a stable Zustand action
-  }, [connect, disconnect, clearMessages, setLoadingSession, setStreaming]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- clearActivityEvents & setStreaming are stable Zustand actions
+  }, [connect, disconnect, clearMessages, setLoadingSession]);
 
   // Listen for permission-response events from AppShell/PermissionStack
   useEffect(() => {
