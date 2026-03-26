@@ -762,6 +762,10 @@ export function ChatContainer() {
   const handleBackgroundMessage = useCallback(
     (bgSessionId: string | null, msg: WebSocketMessage) => {
       switch (msg.type) {
+        case "assistant_text":
+          // Track that a background session is actively streaming
+          if (bgSessionId) setSessionStreaming(bgSessionId, true);
+          break;
         case "result":
           if (bgSessionId) setSessionStreaming(bgSessionId, false);
           window.dispatchEvent(new Event("cost-updated"));
@@ -1010,16 +1014,17 @@ export function ChatContainer() {
       }
 
       // DON'T disconnect old connection — it continues streaming in the background.
-      // Try to promote an existing background connection for this session.
-      // This avoids creating a duplicate WebSocket and preserves the live stream.
+      // Try to promote an existing background connection for this session,
+      // but only if it's NOT still streaming (background messages are lightweight
+      // and don't buffer full text, so mid-stream promotion loses content).
+      const isTargetStreaming = !!streamingSessionsRef.current[targetId];
       const existingConnId = targetId ? getConnectionForSession(targetId) : null;
-      if (existingConnId && promoteToActive(existingConnId)) {
-        // Promoted — messages now route to handleMessage. Cached messages
-        // are already displayed above. If still streaming, new chunks flow
-        // through immediately.
+      if (existingConnId && !isTargetStreaming && promoteToActive(existingConnId)) {
+        // Promoted idle connection — no active streaming, cached messages are current.
         setLoadingSession(false);
       } else {
-        // No existing connection — create a new one (fetches session_history from backend).
+        // Either no existing connection, or session is still streaming —
+        // create a new one to get full session_history from the backend.
         connect(targetId || undefined);
       }
     };
@@ -1032,9 +1037,9 @@ export function ChatContainer() {
       }
 
       // Reset display state for a fresh empty chat
+      setSessionId(null);
       clearMessages();
       clearActivityEvents();
-      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       lastFinishedMsgId.current = null;

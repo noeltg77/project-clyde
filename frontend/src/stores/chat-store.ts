@@ -75,7 +75,7 @@ export type ChatState = {
 };
 
 export type ChatActions = {
-  setSessionId: (id: string) => void;
+  setSessionId: (id: string | null) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, partial: Partial<Message>) => void;
   appendToMessage: (id: string, textDelta: string) => void;
