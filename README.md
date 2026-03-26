@@ -2,7 +2,7 @@
   <img src="docs/images/clyde-banner.png" alt="Project Clyde — Clyde Corp HQ" width="100%" />
 </p>
 
-<h1 align="center">Project Clyde — Early Access</h1>
+<h1 align="center">Project Clyde</h1>
 
 <p align="center">
   <strong>Your personal AI workforce, powered by the Claude Agent SDK.</strong><br/>
