@@ -136,15 +136,18 @@ export function useAgentWebSocket(
       try {
         const parsed = JSON.parse(event.data) as WebSocketMessage;
 
+        // Always learn sessionId from session_created — needed so
+        // getConnectionForSession can find this connection later when
+        // the session was created after connect() was called without an ID.
+        if (parsed.type === "session_created" && parsed.data?.session_id) {
+          connMetaRef.current.set(connId, parsed.data.session_id as string);
+        }
+
         if (connId === activeConnIdRef.current) {
           // Active connection → full message handling
           onMessageRef.current(parsed);
         } else {
           // Background connection → lightweight handling
-          // Learn sessionId from session_created if we don't have it yet
-          if (parsed.type === "session_created" && parsed.data?.session_id) {
-            connMetaRef.current.set(connId, parsed.data.session_id as string);
-          }
           const sid = connMetaRef.current.get(connId) || null;
           onBackgroundMessageRef.current?.(sid, parsed);
         }
