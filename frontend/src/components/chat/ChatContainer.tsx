@@ -70,11 +70,8 @@ export function ChatContainer() {
   const updateColumnInStore = useTaskStore((s) => s.updateColumn);
   const removeColumnFromStore = useTaskStore((s) => s.removeColumn);
 
-  // Per-session streaming tracking
+  // Streaming state tracking
   const setSessionStreaming = useChatStore((s) => s.setSessionStreaming);
-  const streamingSessions = useChatStore((s) => s.streamingSessions);
-  const streamingSessionsRef = useRef(streamingSessions);
-  streamingSessionsRef.current = streamingSessions;
 
   // Keep a ref to current sessionId for use inside callbacks
   const sessionIdRef = useRef<string | null>(null);
@@ -753,90 +750,10 @@ export function ChatContainer() {
     setConnected(false);
   }, [setConnected]);
 
-  /**
-   * Lightweight handler for messages from background WebSocket connections.
-   * Only processes events needed for per-session streaming tracking,
-   * sidebar updates, and global events (tasks). The full message
-   * history is reloaded when the user switches back to that session.
-   */
-  const handleBackgroundMessage = useCallback(
-    (bgSessionId: string | null, msg: WebSocketMessage) => {
-      switch (msg.type) {
-        case "assistant_text":
-          // Track that a background session is actively streaming
-          if (bgSessionId) setSessionStreaming(bgSessionId, true);
-          break;
-        case "result":
-          if (bgSessionId) setSessionStreaming(bgSessionId, false);
-          window.dispatchEvent(new Event("cost-updated"));
-          break;
-        case "error":
-          if (bgSessionId) setSessionStreaming(bgSessionId, false);
-          break;
-        case "session_created": {
-          const newSid = msg.data.session_id as string;
-          const title = (msg.data.title as string) || "New Chat";
-          const createdAt = (msg.data.created_at as string) || new Date().toISOString();
-          addSession({
-            id: newSid,
-            title,
-            messageCount: 1,
-            lastMessagePreview: "",
-            totalCost: 0,
-            createdAt,
-            updatedAt: createdAt,
-          });
-          break;
-        }
-        case "session_title_update": {
-          const sid = msg.data.session_id as string;
-          const title = msg.data.title as string;
-          if (sid && title) updateSessionTitle(sid, title);
-          break;
-        }
-        // Global events — process regardless of which session they come from
-        case "task_created":
-          addTaskToStore(msg.data as Task);
-          break;
-        case "task_updated": {
-          const t = msg.data as Task;
-          updateTaskInStore(t.id, t);
-          break;
-        }
-        case "task_deleted":
-          removeTaskFromStore(msg.data.id as string);
-          break;
-        case "task_column_created":
-          addColumnToStore(msg.data as TaskColumn);
-          break;
-        case "task_column_updated": {
-          const c = msg.data as TaskColumn;
-          updateColumnInStore(c.id, c);
-          break;
-        }
-        case "task_column_deleted":
-          removeColumnFromStore(msg.data.id as string);
-          break;
-      }
-    },
-    [
-      setSessionStreaming,
-      addSession,
-      updateSessionTitle,
-      addTaskToStore,
-      updateTaskInStore,
-      removeTaskFromStore,
-      addColumnToStore,
-      updateColumnInStore,
-      removeColumnFromStore,
-    ]
-  );
-
-  const { connect, send, disconnect, getConnectionForSession, promoteToActive } = useAgentWebSocket(
+  const { connect, send, disconnect } = useAgentWebSocket(
     handleMessage,
     handleConnect,
     handleDisconnect,
-    handleBackgroundMessage
   );
 
   // Keep send ref updated
@@ -991,9 +908,9 @@ export function ChatContainer() {
       activityMsgIds.current = {};
       clearActivityEvents();
 
-      // Switch to target session — sync isStreaming from per-session state
+      // Switch to target session
       setSessionId(targetId);
-      setStreaming(!!streamingSessionsRef.current[targetId]);
+      setStreaming(false);
 
       // Persist active session for page refresh recovery
       if (targetId) {
@@ -1013,20 +930,10 @@ export function ChatContainer() {
         setLoadingSession(true);
       }
 
-      // DON'T disconnect old connection — it continues streaming in the background.
-      // Try to promote an existing background connection for this session,
-      // but only if it's NOT still streaming (background messages are lightweight
-      // and don't buffer full text, so mid-stream promotion loses content).
-      const isTargetStreaming = !!streamingSessionsRef.current[targetId];
-      const existingConnId = targetId ? getConnectionForSession(targetId) : null;
-      if (existingConnId && !isTargetStreaming && promoteToActive(existingConnId)) {
-        // Promoted idle connection — no active streaming, cached messages are current.
-        setLoadingSession(false);
-      } else {
-        // Either no existing connection, or session is still streaming —
-        // create a new one to get full session_history from the backend.
-        connect(targetId || undefined);
-      }
+      // Close the current connection and open a new one for the target session.
+      // The backend continues processing any in-flight response and saves it to DB.
+      // The new connection loads session_history from DB.
+      connect(targetId || undefined);
     };
 
     const handleNewChat = () => {
@@ -1048,8 +955,8 @@ export function ChatContainer() {
       setLoadingSession(true);
       sessionStorage.removeItem("clyde_active_session");
 
-      // DON'T disconnect old connection — it continues in the background.
-      // Create a new connection for a brand-new session.
+      // Close old connection and create a new one for a brand-new session.
+      // The backend saves any in-flight response to DB.
       connect();
     };
 
@@ -1060,7 +967,7 @@ export function ChatContainer() {
       window.removeEventListener("new-chat", handleNewChat);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Zustand actions are stable
-  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages, getConnectionForSession, promoteToActive]);
+  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages]);
 
   // Listen for permission-response events from AppShell/PermissionStack
   useEffect(() => {

@@ -35,37 +35,30 @@ export type WebSocketMessage = {
 };
 
 /**
- * Multi-connection WebSocket hook for concurrent chat sessions.
+ * Single-connection WebSocket hook.
  *
- * Maintains a pool of WebSocket connections. The "active" connection
- * routes messages to onMessage; background connections route to
- * onBackgroundMessage for lightweight tracking (streaming state, titles, etc.).
+ * Only ONE WebSocket connection is active at a time. Calling connect()
+ * closes any previous connection before opening a new one. The backend
+ * gracefully handles disconnection by continuing to process the response
+ * and saving it to the database.
  */
 export function useAgentWebSocket(
   onMessage: (msg: WebSocketMessage) => void,
   onConnect: () => void,
   onDisconnect: () => void,
-  onBackgroundMessage?: (sessionId: string | null, msg: WebSocketMessage) => void
 ) {
-  // Connection pool: connId → WebSocket
-  const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
-  // Metadata per connection: connId → sessionId (learned from session_created or connect param)
-  const connMetaRef = useRef<Map<string, string | undefined>>(new Map());
-  // Which connection is currently "active" (displayed in the UI)
-  const activeConnIdRef = useRef<string | null>(null);
-
+  const wsRef = useRef<WebSocket | null>(null);
   const isMounted = useRef(true);
-  const reconnectTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const sessionIdRef = useRef<string | undefined>(undefined);
 
   // Store callbacks in refs so connect() never changes identity
   const onMessageRef = useRef(onMessage);
   const onConnectRef = useRef(onConnect);
   const onDisconnectRef = useRef(onDisconnect);
-  const onBackgroundMessageRef = useRef(onBackgroundMessage);
   onMessageRef.current = onMessage;
   onConnectRef.current = onConnect;
   onDisconnectRef.current = onDisconnect;
-  onBackgroundMessageRef.current = onBackgroundMessage;
 
   // Track mounted state for Strict Mode resilience
   useEffect(() => {
@@ -75,22 +68,30 @@ export function useAgentWebSocket(
     };
   }, []);
 
-  /**
-   * Open a new WebSocket connection. The new connection becomes
-   * the active connection. Returns a connection ID.
-   */
-  const connect = useCallback((sessionId?: string): string => {
-    const connId = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-    // Clear any pending reconnect for the previously active connection
-    const prevActive = activeConnIdRef.current;
-    if (prevActive) {
-      const timeout = reconnectTimeouts.current.get(prevActive);
-      if (timeout) {
-        clearTimeout(timeout);
-        reconnectTimeouts.current.delete(prevActive);
-      }
+  /** Close the current connection cleanly. */
+  const closeCurrentConnection = useCallback(() => {
+    if (reconnectTimeout.current) {
+      clearTimeout(reconnectTimeout.current);
+      reconnectTimeout.current = null;
     }
+    const ws = wsRef.current;
+    if (ws) {
+      ws.onclose = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.close();
+      wsRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Open a new WebSocket connection, closing any existing one first.
+   */
+  const connect = useCallback((sessionId?: string) => {
+    // Close previous connection — backend continues processing & saves to DB
+    closeCurrentConnection();
+
+    sessionIdRef.current = sessionId;
 
     const baseUrl =
       process.env.NEXT_PUBLIC_BACKEND_WS_URL || "ws://localhost:8000";
@@ -99,58 +100,35 @@ export function useAgentWebSocket(
       : `${baseUrl}/ws/chat`;
 
     const ws = new WebSocket(url);
-    connectionsRef.current.set(connId, ws);
-    connMetaRef.current.set(connId, sessionId);
-    activeConnIdRef.current = connId;
+    wsRef.current = ws;
 
     ws.onopen = () => {
       if (!isMounted.current) return;
-      // Only fire onConnect for the active connection
-      if (connId === activeConnIdRef.current) {
-        onConnectRef.current();
-      }
+      onConnectRef.current();
     };
 
     ws.onclose = () => {
       if (!isMounted.current) return;
-      connectionsRef.current.delete(connId);
-      connMetaRef.current.delete(connId);
+      // Only handle if this is still the current connection
+      if (wsRef.current !== ws) return;
+      wsRef.current = null;
+      onDisconnectRef.current();
 
-      if (connId === activeConnIdRef.current) {
-        activeConnIdRef.current = null;
-        onDisconnectRef.current();
-
-        // Auto-reconnect active connection after 3s
-        const timeout = setTimeout(() => {
-          if (isMounted.current && activeConnIdRef.current === null) {
-            connect(sessionId);
-          }
-        }, 3000);
-        reconnectTimeouts.current.set(connId, timeout);
-      }
-      // Background connections: silent cleanup, no auto-reconnect
+      // Auto-reconnect after 3s if no new connection was created
+      reconnectTimeout.current = setTimeout(() => {
+        if (isMounted.current && !wsRef.current) {
+          connect(sessionIdRef.current);
+        }
+      }, 3000);
     };
 
     ws.onmessage = (event) => {
       if (!isMounted.current) return;
+      // Ignore messages from stale connections
+      if (wsRef.current !== ws) return;
       try {
         const parsed = JSON.parse(event.data) as WebSocketMessage;
-
-        // Always learn sessionId from session_created — needed so
-        // getConnectionForSession can find this connection later when
-        // the session was created after connect() was called without an ID.
-        if (parsed.type === "session_created" && parsed.data?.session_id) {
-          connMetaRef.current.set(connId, parsed.data.session_id as string);
-        }
-
-        if (connId === activeConnIdRef.current) {
-          // Active connection → full message handling
-          onMessageRef.current(parsed);
-        } else {
-          // Background connection → lightweight handling
-          const sid = connMetaRef.current.get(connId) || null;
-          onBackgroundMessageRef.current?.(sid, parsed);
-        }
+        onMessageRef.current(parsed);
       } catch {
         console.error("Failed to parse WebSocket message:", event.data);
       }
@@ -159,114 +137,32 @@ export function useAgentWebSocket(
     ws.onerror = () => {
       // onclose will fire after this
     };
-
-    return connId;
-  }, []); // Stable identity — uses refs
+  }, [closeCurrentConnection]);
 
   /**
    * Send data on the active connection.
    */
   const send = useCallback((data: Record<string, unknown>) => {
-    const connId = activeConnIdRef.current;
-    if (!connId) return;
-    const ws = connectionsRef.current.get(connId);
+    const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(data));
     }
   }, []);
 
   /**
-   * Close a specific connection by ID, or all connections if no ID given.
+   * Disconnect the current connection.
    */
-  const disconnect = useCallback((connId?: string) => {
-    const closeConn = (id: string) => {
-      const ws = connectionsRef.current.get(id);
-      if (ws) {
-        ws.onclose = null;
-        ws.onmessage = null;
-        ws.onerror = null;
-        ws.close();
-        connectionsRef.current.delete(id);
-      }
-      connMetaRef.current.delete(id);
-      const timeout = reconnectTimeouts.current.get(id);
-      if (timeout) {
-        clearTimeout(timeout);
-        reconnectTimeouts.current.delete(id);
-      }
-      if (id === activeConnIdRef.current) {
-        activeConnIdRef.current = null;
-      }
-    };
+  const disconnect = useCallback(() => {
+    closeCurrentConnection();
+  }, [closeCurrentConnection]);
 
-    if (connId) {
-      closeConn(connId);
-    } else {
-      // Close all connections
-      for (const id of Array.from(connectionsRef.current.keys())) {
-        closeConn(id);
-      }
-    }
-  }, []);
-
-  /**
-   * Find an existing open connection for a given sessionId.
-   * Returns the connId if found, null otherwise.
-   */
-  const getConnectionForSession = useCallback((sessionId: string): string | null => {
-    for (const [connId, sid] of connMetaRef.current.entries()) {
-      if (sid === sessionId) {
-        const ws = connectionsRef.current.get(connId);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          return connId;
-        }
-      }
-    }
-    return null;
-  }, []);
-
-  /**
-   * Promote an existing background connection to be the active connection.
-   * Messages will immediately start routing to onMessage instead of onBackgroundMessage.
-   * Returns true if promotion succeeded.
-   */
-  const promoteToActive = useCallback((connId: string): boolean => {
-    const ws = connectionsRef.current.get(connId);
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-
-    // Clear reconnect timeout for the previously active connection
-    const prevActive = activeConnIdRef.current;
-    if (prevActive) {
-      const timeout = reconnectTimeouts.current.get(prevActive);
-      if (timeout) {
-        clearTimeout(timeout);
-        reconnectTimeouts.current.delete(prevActive);
-      }
-    }
-
-    activeConnIdRef.current = connId;
-    onConnectRef.current();
-    return true;
-  }, []);
-
-  // Cleanup all connections on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMounted.current = false;
-      for (const ws of connectionsRef.current.values()) {
-        ws.onclose = null;
-        ws.onmessage = null;
-        ws.onerror = null;
-        ws.close();
-      }
-      connectionsRef.current.clear();
-      connMetaRef.current.clear();
-      for (const timeout of reconnectTimeouts.current.values()) {
-        clearTimeout(timeout);
-      }
-      reconnectTimeouts.current.clear();
+      closeCurrentConnection();
     };
-  }, []);
+  }, [closeCurrentConnection]);
 
-  return { connect, send, disconnect, getConnectionForSession, promoteToActive };
+  return { connect, send, disconnect };
 }
