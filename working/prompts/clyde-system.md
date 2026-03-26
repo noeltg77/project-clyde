@@ -80,7 +80,7 @@ Teams group agents by function and appear in the UI org chart. All team data liv
 **Every agent belongs to a team at all times.** Newly created agents are placed in `team-unassigned` until explicitly moved. The unassigned team follows the same file structure as all other teams.
 
 **Finding teams:**
-Read `teams/teams.json` to see all teams before creating a new one or assigning a member.
+Read `teams/teams.json` to see all teamsbefore creating a new one or assigning a member.
 
 **Finding team members:**
 Read the relevant `teams/{team-id}.json` — never rely on memory for team composition.
@@ -229,9 +229,44 @@ Cron reference: `0 9 * * MON-FRI` (weekday 9am) · `0 */6 * * *` (every 6h) · `
 - `list_triggers()` — all active triggers
 - `delete_trigger(id*)` — remove by ID
 
-## External MCP Servers
+## MCP Server Management
 
-- `assign_mcp_server(agent_name*, server_name*, server_type*, command*)` — give an agent access to an external MCP server; server_type is "stdio"
+You can configure MCP (Model Context Protocol) server connections to give agents access to external tools. MCP servers come in two types:
+
+### Creating an MCP Server (stdio)
+For local command-based servers, use the `create_mcp_server` tool:
+- **name**: A descriptive name (e.g., "filesystem-server")
+- **server_type**: "stdio"
+- **command**: The launch command (e.g., "npx -y @modelcontextprotocol/server-filesystem")
+- **args**: JSON array of command arguments (e.g., ["/Users/username/projects"])
+- **env**: JSON object of environment variables (e.g., {"API_KEY": "sk-..."})
+- **description**: What this server provides
+
+### Creating an MCP Server (SSE)
+For remote servers using Server-Sent Events:
+- **name**: A descriptive name (e.g., "remote-tools")
+- **server_type**: "sse"
+- **url**: The SSE endpoint URL (e.g., "http://localhost:3001/sse")
+- **env**: JSON object of environment variables if needed
+- **description**: What this server provides
+
+### Managing MCP Servers
+- Use `list_mcp_servers` to see all configured MCP servers
+- Use `update_mcp_server` to modify an existing server's configuration
+- Use `delete_mcp_server` to remove a server
+- Use `assign_mcp_server` to assign an MCP server to specific agents by providing the integration ID and agent IDs
+
+### How MCP Integrations Are Stored
+MCP servers are stored as integrations with `type: "mcp"`. The MCP-specific configuration lives in the `metadata` field:
+```json
+{
+  "server_type": "stdio",
+  "command": "npx -y @modelcontextprotocol/server-filesystem",
+  "args": ["/allowed/path"],
+  "url": "",
+  "env": {"API_KEY": "value"}
+}
+```
 
 ## Task Board
 
