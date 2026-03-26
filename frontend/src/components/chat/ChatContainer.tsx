@@ -70,8 +70,11 @@ export function ChatContainer() {
   const updateColumnInStore = useTaskStore((s) => s.updateColumn);
   const removeColumnFromStore = useTaskStore((s) => s.removeColumn);
 
-  // Streaming state tracking
+  // Per-session streaming tracking
   const setSessionStreaming = useChatStore((s) => s.setSessionStreaming);
+  const streamingSessions = useChatStore((s) => s.streamingSessions);
+  const streamingSessionsRef = useRef(streamingSessions);
+  streamingSessionsRef.current = streamingSessions;
 
   // Keep a ref to current sessionId for use inside callbacks
   const sessionIdRef = useRef<string | null>(null);
@@ -95,29 +98,6 @@ export function ChatContainer() {
 
   const handleMessage = useCallback(
     (msg: WebSocketMessage) => {
-      /** Ensure a streaming message bubble exists for attaching steps/activities.
-       *  tool_use and agent_activity can arrive before any assistant_text. */
-      const ensureStreamingMsg = (): string => {
-        if (streamingMsgId.current) return streamingMsgId.current;
-        if (lastAgentMsgId.current) return lastAgentMsgId.current;
-        const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        streamingMsgId.current = id;
-        lastAgentMsgId.current = id;
-        setStreaming(true);
-        if (sessionIdRef.current) setSessionStreaming(sessionIdRef.current, true);
-        addMessage({
-          id,
-          sessionId: "",
-          role: "clyde",
-          agentName: "Clyde",
-          content: "",
-          createdAt: new Date().toISOString(),
-          isStreaming: true,
-          metadata: { model_tier: "opus" },
-        });
-        return id;
-      };
-
       switch (msg.type) {
         case "init": {
           const sid = msg.data.session_id as string | null;
@@ -388,15 +368,17 @@ export function ChatContainer() {
 
         case "tool_use": {
           {
-            const stepTarget = ensureStreamingMsg();
-            const toolName = msg.data.tool as string;
-            const toolInput = msg.data.input as string | undefined;
-            addStepToMessage(stepTarget, {
-              type: "tool_use",
-              label: toolName,
-              detail: toolInput ? toolInput.slice(0, 200) : undefined,
-              timestamp: new Date().toISOString(),
-            });
+            const stepTarget = streamingMsgId.current || lastAgentMsgId.current;
+            if (stepTarget) {
+              const toolName = msg.data.tool as string;
+              const toolInput = msg.data.input as string | undefined;
+              addStepToMessage(stepTarget, {
+                type: "tool_use",
+                label: toolName,
+                detail: toolInput ? toolInput.slice(0, 200) : undefined,
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
           break;
         }
@@ -478,13 +460,15 @@ export function ChatContainer() {
 
           // Track as a step on the current or last agent message
           {
-            const stepTarget = ensureStreamingMsg();
-            addStepToMessage(stepTarget, {
-              type: eventType === "started" ? "agent_started" : "agent_stopped",
-              label: regName,
-              detail: isTeamMember ? "Team member" : "Subagent",
-              timestamp: new Date().toISOString(),
-            });
+            const stepTarget = streamingMsgId.current || lastAgentMsgId.current;
+            if (stepTarget) {
+              addStepToMessage(stepTarget, {
+                type: eventType === "started" ? "agent_started" : "agent_stopped",
+                label: regName,
+                detail: isTeamMember ? "Team member" : "Subagent",
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
 
           // Update active agent tracking — use registry data from backend
@@ -699,28 +683,32 @@ export function ChatContainer() {
         }
 
         case "visualization": {
-          const vizTarget = ensureStreamingMsg();
-          addVisualizationToMessage(vizTarget, {
-            id: msg.data.vis_id as string,
-            title: msg.data.title as string,
-            htmlContent: msg.data.html_content as string,
-            description: (msg.data.description as string) || undefined,
-          });
+          const vizTarget = streamingMsgId.current || lastAgentMsgId.current;
+          if (vizTarget) {
+            addVisualizationToMessage(vizTarget, {
+              id: msg.data.vis_id as string,
+              title: msg.data.title as string,
+              htmlContent: msg.data.html_content as string,
+              description: (msg.data.description as string) || undefined,
+            });
+          }
           break;
         }
 
         case "visual": {
-          const visualTarget = ensureStreamingMsg();
-          addVisualToMessage(visualTarget, {
-            id: msg.data.vis_id as string,
-            title: msg.data.title as string,
-            mode: msg.data.mode as "chart" | "code",
-            chartType: (msg.data.chart_type as string) || undefined,
-            data: (msg.data.data as Record<string, unknown>) || undefined,
-            options: (msg.data.options as Record<string, unknown>) || undefined,
-            code: (msg.data.code as string) || undefined,
-            description: (msg.data.description as string) || undefined,
-          });
+          const visualTarget = streamingMsgId.current || lastAgentMsgId.current;
+          if (visualTarget) {
+            addVisualToMessage(visualTarget, {
+              id: msg.data.vis_id as string,
+              title: msg.data.title as string,
+              mode: msg.data.mode as "chart" | "code",
+              chartType: (msg.data.chart_type as string) || undefined,
+              data: (msg.data.data as Record<string, unknown>) || undefined,
+              options: (msg.data.options as Record<string, unknown>) || undefined,
+              code: (msg.data.code as string) || undefined,
+              description: (msg.data.description as string) || undefined,
+            });
+          }
           break;
         }
       }
@@ -765,10 +753,86 @@ export function ChatContainer() {
     setConnected(false);
   }, [setConnected]);
 
+  /**
+   * Lightweight handler for messages from background WebSocket connections.
+   * Only processes events needed for per-session streaming tracking,
+   * sidebar updates, and global events (tasks). The full message
+   * history is reloaded when the user switches back to that session.
+   */
+  const handleBackgroundMessage = useCallback(
+    (bgSessionId: string | null, msg: WebSocketMessage) => {
+      switch (msg.type) {
+        case "result":
+          if (bgSessionId) setSessionStreaming(bgSessionId, false);
+          window.dispatchEvent(new Event("cost-updated"));
+          break;
+        case "error":
+          if (bgSessionId) setSessionStreaming(bgSessionId, false);
+          break;
+        case "session_created": {
+          const newSid = msg.data.session_id as string;
+          const title = (msg.data.title as string) || "New Chat";
+          const createdAt = (msg.data.created_at as string) || new Date().toISOString();
+          addSession({
+            id: newSid,
+            title,
+            messageCount: 1,
+            lastMessagePreview: "",
+            totalCost: 0,
+            createdAt,
+            updatedAt: createdAt,
+          });
+          break;
+        }
+        case "session_title_update": {
+          const sid = msg.data.session_id as string;
+          const title = msg.data.title as string;
+          if (sid && title) updateSessionTitle(sid, title);
+          break;
+        }
+        // Global events — process regardless of which session they come from
+        case "task_created":
+          addTaskToStore(msg.data as Task);
+          break;
+        case "task_updated": {
+          const t = msg.data as Task;
+          updateTaskInStore(t.id, t);
+          break;
+        }
+        case "task_deleted":
+          removeTaskFromStore(msg.data.id as string);
+          break;
+        case "task_column_created":
+          addColumnToStore(msg.data as TaskColumn);
+          break;
+        case "task_column_updated": {
+          const c = msg.data as TaskColumn;
+          updateColumnInStore(c.id, c);
+          break;
+        }
+        case "task_column_deleted":
+          removeColumnFromStore(msg.data.id as string);
+          break;
+      }
+    },
+    [
+      setSessionStreaming,
+      addSession,
+      updateSessionTitle,
+      addTaskToStore,
+      updateTaskInStore,
+      removeTaskFromStore,
+      addColumnToStore,
+      updateColumnInStore,
+      removeColumnFromStore,
+    ]
+  );
+
   const { connect, send, disconnect } = useAgentWebSocket(
     handleMessage,
     handleConnect,
     handleDisconnect,
+    handleBackgroundMessage
   );
 
   // Keep send ref updated
@@ -923,9 +987,9 @@ export function ChatContainer() {
       activityMsgIds.current = {};
       clearActivityEvents();
 
-      // Switch to target session
+      // Switch to target session — sync isStreaming from per-session state
       setSessionId(targetId);
-      setStreaming(false);
+      setStreaming(!!streamingSessionsRef.current[targetId]);
 
       // Persist active session for page refresh recovery
       if (targetId) {
@@ -945,9 +1009,8 @@ export function ChatContainer() {
         setLoadingSession(true);
       }
 
-      // Close the current connection and open a new one for the target session.
-      // The backend continues processing any in-flight response and saves it to DB.
-      // The new connection loads session_history from DB.
+      // DON'T disconnect old connection — it continues streaming in the background.
+      // Create a new connection for the target session (backend sends session_history).
       connect(targetId || undefined);
     };
 
@@ -959,9 +1022,9 @@ export function ChatContainer() {
       }
 
       // Reset display state for a fresh empty chat
-      setSessionId(null);
       clearMessages();
       clearActivityEvents();
+      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       lastFinishedMsgId.current = null;
@@ -970,8 +1033,8 @@ export function ChatContainer() {
       setLoadingSession(true);
       sessionStorage.removeItem("clyde_active_session");
 
-      // Close old connection and create a new one for a brand-new session.
-      // The backend saves any in-flight response to DB.
+      // DON'T disconnect old connection — it continues in the background.
+      // Create a new connection for a brand-new session.
       connect();
     };
 
