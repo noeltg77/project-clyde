@@ -507,7 +507,7 @@ function applyCostSavingMode() {
 }
 
 // ─── App Launcher ───────────────────────────────────────────────────
-function launchApp() {
+async function launchApp() {
   console.log(C.bold(C.green('  STARTING CLYDE\n')));
 
   const env = { ...process.env, ...loadEnvFile() };
@@ -516,6 +516,22 @@ function launchApp() {
 
   // Backend
   const uvicorn = path.join(BACKEND_DIR, '.venv', BIN_DIR, 'uvicorn');
+
+  if (!fs.existsSync(uvicorn)) {
+    console.log(`  ${C.cross} ${C.red('Backend not installed')} ${C.gray('(uvicorn not found)')}`);
+    console.log(C.gray('  This usually means dependencies were not fully installed.\n'));
+    const fix = await promptYesNo('Install backend dependencies now?');
+    if (fix) {
+      await installDependencies();
+      if (!fs.existsSync(uvicorn)) {
+        console.log(`\n  ${C.cross} ${C.red('uvicorn still not found after install. Check backend/requirements.txt.')}\n`);
+        process.exit(1);
+      }
+    } else {
+      console.log(C.gray('\n  Run the setup again or manually create the backend venv.\n'));
+      process.exit(1);
+    }
+  }
   const backend = spawn(uvicorn, [
     'main:app', '--reload', '--host', '127.0.0.1', '--port', '8000',
   ], {
@@ -640,7 +656,7 @@ async function main() {
     console.log('');
   }
 
-  launchApp();
+  await launchApp();
 }
 
 main().catch((err) => {

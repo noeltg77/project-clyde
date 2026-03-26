@@ -9,6 +9,7 @@ search chat history, manage agent memory, and handle skills.
 import json
 import os
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -44,27 +45,48 @@ from services.openai_client import call_openai
 
 # Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
-_session_id: str = ""
-_ws: Any = None  # WebSocket for pushing activity events to the frontend
 
-# Phase 13: Visualisation — pending payloads accumulated during a response
-_pending_visualizations: list[dict] = []
-_pending_visuals: list[dict] = []
+# Per-session state using ContextVars — each WebSocket handler / scheduled task
+# runs in its own asyncio context, so these are automatically scoped per-session.
+_session_id_var: ContextVar[str] = ContextVar("session_id", default="")
+_ws_var: ContextVar[Any] = ContextVar("ws", default=None)
+_pending_visualizations_var: ContextVar[list[dict]] = ContextVar("pending_viz")
+_pending_visuals_var: ContextVar[list[dict]] = ContextVar("pending_visuals")
+
+
+def _get_pending_visualizations() -> list[dict]:
+    """Get the per-session pending visualizations list (creates on first access)."""
+    try:
+        return _pending_visualizations_var.get()
+    except LookupError:
+        val: list[dict] = []
+        _pending_visualizations_var.set(val)
+        return val
+
+
+def _get_pending_visuals() -> list[dict]:
+    """Get the per-session pending visuals list (creates on first access)."""
+    try:
+        return _pending_visuals_var.get()
+    except LookupError:
+        val: list[dict] = []
+        _pending_visuals_var.set(val)
+        return val
 
 
 def get_and_clear_pending_visualizations() -> list[dict]:
     """Return and clear all pending legacy visualisation payloads."""
-    global _pending_visualizations
-    result = list(_pending_visualizations)
-    _pending_visualizations.clear()
+    pending = _get_pending_visualizations()
+    result = list(pending)
+    pending.clear()
     return result
 
 
 def get_and_clear_pending_visuals() -> list[dict]:
     """Return and clear all pending container-based visual payloads."""
-    global _pending_visuals
-    result = list(_pending_visuals)
-    _pending_visuals.clear()
+    pending = _get_pending_visuals()
+    result = list(pending)
+    pending.clear()
     return result
 
 
@@ -75,11 +97,13 @@ def init_tools(working_dir: str) -> None:
 
 
 def update_session_context(session_id: str, ws: Any = None) -> None:
-    """Update the current chat session ID and WebSocket reference."""
-    global _session_id, _ws
-    _session_id = session_id
+    """Update the current chat session ID and WebSocket reference (per-context)."""
+    _session_id_var.set(session_id)
     if ws is not None:
-        _ws = ws
+        _ws_var.set(ws)
+    # Initialize fresh per-session pending lists
+    _pending_visualizations_var.set([])
+    _pending_visuals_var.set([])
 
 
 def _safe_path(relative_or_virtual: str) -> str:
@@ -3272,6 +3296,8 @@ async def gemini_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         # Emit "started" activity event to frontend
         agent_display_name = agent.get("name", agent_name)
         agent_registry_id = agent.get("id", "")
+        _ws = _ws_var.get()
+        _session_id = _session_id_var.get()
         if _ws:
             try:
                 await _ws.send_json({
@@ -3464,6 +3490,8 @@ async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         # Emit "started" activity event to frontend
         agent_display_name = agent.get("name", agent_name)
         agent_registry_id = agent.get("id", "")
+        _ws = _ws_var.get()
+        _session_id = _session_id_var.get()
         if _ws:
             try:
                 await _ws.send_json({
@@ -3598,7 +3626,6 @@ async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
 )
 async def create_visualisation_tool(args: dict[str, Any]) -> dict[str, Any]:
     """Create a legacy HTML/SVG visualisation rendered in a sandboxed iframe."""
-    global _pending_visualizations
     try:
         title = args.get("title", "").strip()
         html_content = args.get("html_content", "").strip()
@@ -3622,9 +3649,10 @@ async def create_visualisation_tool(args: dict[str, Any]) -> dict[str, Any]:
         if description:
             payload["description"] = description
 
-        _pending_visualizations.append(payload)
+        _get_pending_visualizations().append(payload)
 
         # Push to frontend immediately via WebSocket
+        _ws = _ws_var.get()
         if _ws:
             try:
                 await _ws.send_json({"type": "visualization", "data": payload})
@@ -3665,7 +3693,6 @@ async def create_visualisation_tool(args: dict[str, Any]) -> dict[str, Any]:
 )
 async def create_visual_tool(args: dict[str, Any]) -> dict[str, Any]:
     """Create a container-based visualisation (Chart.js chart or custom JS code)."""
-    global _pending_visuals
     try:
         title = args.get("title", "").strip()
         mode = args.get("mode", "").strip().lower()
@@ -3741,9 +3768,10 @@ async def create_visual_tool(args: dict[str, Any]) -> dict[str, Any]:
                 )
             payload["code"] = code
 
-        _pending_visuals.append(payload)
+        _get_pending_visuals().append(payload)
 
         # Push to frontend immediately via WebSocket
+        _ws = _ws_var.get()
         if _ws:
             try:
                 await _ws.send_json({"type": "visual", "data": payload})

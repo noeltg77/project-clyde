@@ -90,7 +90,10 @@ export function ChatContainer() {
           const sid = msg.data.session_id as string | null;
           // For resumed sessions, set the ID immediately.
           // For new chats, session_id is null — deferred until first message.
-          if (sid) setSessionId(sid);
+          if (sid) {
+            setSessionId(sid);
+            sessionStorage.setItem("clyde_active_session", sid);
+          }
           setLoadingSession(false);
           break;
         }
@@ -101,6 +104,7 @@ export function ChatContainer() {
           const title = (msg.data.title as string) || "New Chat";
           const createdAt = (msg.data.created_at as string) || new Date().toISOString();
           setSessionId(newSid);
+          sessionStorage.setItem("clyde_active_session", newSid);
           addSession({
             id: newSid,
             title,
@@ -855,7 +859,15 @@ export function ChatContainer() {
     async function boot() {
       // Phase 1: Load team members + settings + connect WebSocket (parallel, fast)
       await Promise.all([fetchAgents(), fetchDebugSetting()]);
-      connect();
+
+      // Resume the active session if one was persisted (survives page refresh)
+      const savedSessionId = sessionStorage.getItem("clyde_active_session");
+      if (savedSessionId) {
+        setLoadingSession(true);
+        connect(savedSessionId);
+      } else {
+        connect();
+      }
 
       // Phase 2: Load session history in the background (slow, non-blocking)
       fetchSessions();
@@ -873,9 +885,15 @@ export function ChatContainer() {
       setStreaming(false);
       clearMessages();
       clearActivityEvents();
+      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       disconnect();
+      if (targetId) {
+        sessionStorage.setItem("clyde_active_session", targetId);
+      } else {
+        sessionStorage.removeItem("clyde_active_session");
+      }
       connect(targetId || undefined);
     };
 
@@ -884,9 +902,11 @@ export function ChatContainer() {
       setStreaming(false);
       clearMessages();
       clearActivityEvents();
+      setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
       disconnect();
+      sessionStorage.removeItem("clyde_active_session");
       connect(); // no sessionId = new session
     };
 
