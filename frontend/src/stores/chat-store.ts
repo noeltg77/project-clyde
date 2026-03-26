@@ -70,6 +70,8 @@ export type ChatState = {
   isStreaming: boolean;
   isLoadingSession: boolean;
   error: string | null;
+  /** Tracks which sessions are actively streaming on the backend */
+  streamingSessions: Record<string, boolean>;
 };
 
 export type ChatActions = {
@@ -91,6 +93,8 @@ export type ChatActions = {
   updateSessionTitle: (id: string, title: string) => void;
   setLoadingSession: (loading: boolean) => void;
   setMessages: (messages: Message[]) => void;
+  /** Track streaming state for a specific session (independent of active view) */
+  setSessionStreaming: (sessionId: string, streaming: boolean) => void;
 };
 
 export type ChatStore = ChatState & ChatActions;
@@ -105,6 +109,7 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
     isStreaming: false,
     isLoadingSession: false,
     error: null,
+    streamingSessions: {},
     ...initState,
     setSessionId: (id) => set({ sessionId: id }),
     addMessage: (message) =>
@@ -165,4 +170,18 @@ export const createChatStore = (initState?: Partial<ChatState>) =>
       })),
     setLoadingSession: (loading) => set({ isLoadingSession: loading }),
     setMessages: (messages) => set({ messages }),
+    setSessionStreaming: (sessionId, streaming) =>
+      set((state) => {
+        const updated = { ...state.streamingSessions };
+        if (streaming) {
+          updated[sessionId] = true;
+        } else {
+          delete updated[sessionId];
+        }
+        return {
+          streamingSessions: updated,
+          // Sync isStreaming if this is the currently viewed session
+          ...(state.sessionId === sessionId ? { isStreaming: streaming } : {}),
+        };
+      }),
   }));

@@ -767,7 +767,7 @@ function AgentDetail({
         {agentIntegrations.length > 0 && (
           <div className="col-span-2">
             <span className="text-text-secondary/60 text-[11px] uppercase tracking-wider font-semibold">
-              APIs / Webhooks
+              Integrations
             </span>
             <div className="flex flex-wrap gap-1.5 mt-1">
               {agentIntegrations.map((integration) => (
