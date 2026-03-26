@@ -43,7 +43,7 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 | **Schedules & Triggers** | Cron-based automation and file-watch triggers for hands-off agent runs |
 | **Performance Analytics** | Track agent response times and success rates with charts |
 | **Proactive Insights** | Automated analysis that surfaces recommendations and optimisations |
-| **APIs & Webhooks** | Full CRUD integration manager — assign external APIs to agents |
+| **Integrations** | APIs, Webhooks, and MCP servers — full CRUD manager with agent assignment |
 | **Workflows** | Team-scoped, multi-stage processes stored as JSON definitions |
 | **Global Search (Cmd+K)** | Vector similarity search across all conversations |
 | **Debug Mode** | Collapsible prompt viewer showing system prompts and agent instructions |
@@ -173,7 +173,8 @@ Project-Clyde-EA/
 ├── cli/               CLI setup wizard and app launcher
 │   └── clyde.js       Entry point for `npm run clyde`
 ├── db/                Database schema
-│   └── schema.sql     Idempotent SQL (safe to re-run)
+│   ├── schema.sql     Idempotent SQL (safe to re-run)
+│   └── migrations/    Incremental upgrades for existing databases
 ├── frontend/          Next.js web interface (port 3020)
 ├── backend/           FastAPI server + AI agents (port 8000)
 ├── working/           Runtime data (registry, prompts, memory, workflows)
@@ -259,6 +260,20 @@ cd frontend && npm run dev
 Open **http://localhost:3020** and verify all status indicators are green in **Settings**.
 
 </details>
+
+---
+
+## Migrations (Existing Users)
+
+If you're upgrading from a previous version, run any new migration files against your Supabase database. Migrations are located in `db/migrations/` and are numbered sequentially.
+
+In the Supabase dashboard, go to **SQL Editor** > **New query**, paste the migration SQL, and click **Run**.
+
+| Migration | Description |
+|---|---|
+| `001_add_mcp_integration_type.sql` | Adds MCP server support to the integrations table |
+
+> **New installs do not need to run migrations** — the full schema (`db/schema.sql`) already includes all changes.
 
 ---
 
