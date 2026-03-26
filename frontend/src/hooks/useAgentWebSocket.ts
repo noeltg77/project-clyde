@@ -206,6 +206,46 @@ export function useAgentWebSocket(
     }
   }, []);
 
+  /**
+   * Find an existing open connection for a given sessionId.
+   * Returns the connId if found, null otherwise.
+   */
+  const getConnectionForSession = useCallback((sessionId: string): string | null => {
+    for (const [connId, sid] of connMetaRef.current.entries()) {
+      if (sid === sessionId) {
+        const ws = connectionsRef.current.get(connId);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          return connId;
+        }
+      }
+    }
+    return null;
+  }, []);
+
+  /**
+   * Promote an existing background connection to be the active connection.
+   * Messages will immediately start routing to onMessage instead of onBackgroundMessage.
+   * Returns true if promotion succeeded.
+   */
+  const promoteToActive = useCallback((connId: string): boolean => {
+    const ws = connectionsRef.current.get(connId);
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+    // Clear reconnect timeout for the previously active connection
+    const prevActive = activeConnIdRef.current;
+    if (prevActive) {
+      const timeout = reconnectTimeouts.current.get(prevActive);
+      if (timeout) {
+        clearTimeout(timeout);
+        reconnectTimeouts.current.delete(prevActive);
+      }
+    }
+
+    activeConnIdRef.current = connId;
+    onConnectRef.current();
+    return true;
+  }, []);
+
   // Cleanup all connections on unmount
   useEffect(() => {
     return () => {
@@ -225,5 +265,5 @@ export function useAgentWebSocket(
     };
   }, []);
 
-  return { connect, send, disconnect };
+  return { connect, send, disconnect, getConnectionForSession, promoteToActive };
 }

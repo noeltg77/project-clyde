@@ -824,7 +824,7 @@ export function ChatContainer() {
     ]
   );
 
-  const { connect, send, disconnect } = useAgentWebSocket(
+  const { connect, send, disconnect, getConnectionForSession, promoteToActive } = useAgentWebSocket(
     handleMessage,
     handleConnect,
     handleDisconnect,
@@ -991,8 +991,18 @@ export function ChatContainer() {
       }
 
       // DON'T disconnect old connection — it continues streaming in the background.
-      // Create a new connection for the target session (backend sends session_history).
-      connect(targetId || undefined);
+      // Try to promote an existing background connection for this session.
+      // This avoids creating a duplicate WebSocket and preserves the live stream.
+      const existingConnId = targetId ? getConnectionForSession(targetId) : null;
+      if (existingConnId && promoteToActive(existingConnId)) {
+        // Promoted — messages now route to handleMessage. Cached messages
+        // are already displayed above. If still streaming, new chunks flow
+        // through immediately.
+        setLoadingSession(false);
+      } else {
+        // No existing connection — create a new one (fetches session_history from backend).
+        connect(targetId || undefined);
+      }
     };
 
     const handleNewChat = () => {
@@ -1024,7 +1034,7 @@ export function ChatContainer() {
       window.removeEventListener("new-chat", handleNewChat);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Zustand actions are stable
-  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages]);
+  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages, getConnectionForSession, promoteToActive]);
 
   // Listen for permission-response events from AppShell/PermissionStack
   useEffect(() => {
