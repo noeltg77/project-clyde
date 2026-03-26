@@ -624,7 +624,7 @@ async def create_integration_route(body: dict):
     try:
         name = body.get("name", "").strip()
         int_type = body.get("type", "").strip()
-        if not name or int_type not in ("api", "webhook"):
+        if not name or int_type not in ("api", "webhook", "mcp"):
             return {"error": "name and type ('api' or 'webhook') are required"}
 
         credential_env_key = body.get("credential_env_key", "").strip() or None

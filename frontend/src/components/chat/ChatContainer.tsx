@@ -870,6 +870,7 @@ export function ChatContainer() {
     const handleSwitch = (e: Event) => {
       const { sessionId: targetId } = (e as CustomEvent).detail;
       setLoadingSession(true);
+      setStreaming(false);
       clearMessages();
       clearActivityEvents();
       streamingMsgId.current = null;
@@ -880,6 +881,7 @@ export function ChatContainer() {
 
     const handleNewChat = () => {
       setLoadingSession(true);
+      setStreaming(false);
       clearMessages();
       clearActivityEvents();
       streamingMsgId.current = null;
@@ -894,7 +896,7 @@ export function ChatContainer() {
       window.removeEventListener("session-switch", handleSwitch);
       window.removeEventListener("new-chat", handleNewChat);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- clearActivityEvents is a stable Zustand action
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- clearActivityEvents & setStreaming are stable Zustand actions
   }, [connect, disconnect, clearMessages, setLoadingSession]);
 
   // Listen for permission-response events from AppShell/PermissionStack

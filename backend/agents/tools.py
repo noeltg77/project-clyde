@@ -1364,13 +1364,18 @@ async def delete_trigger_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "assign_mcp_server",
-    "Assign an external MCP server to an agent. The agent will have access to "
-    "the MCP server's tools during tasks. Server config is stored in the registry.",
+    "Assign an MCP server to an agent. If the MCP server doesn't exist as an "
+    "integration yet, it will be created. The agent will be added to the "
+    "integration's assigned_agents list.",
     {"agent_name": str, "server_name": str, "server_type": str, "command": str},
 )
 async def assign_mcp_server_tool(args: dict[str, Any]) -> dict[str, Any]:
-    """Assign an external MCP server to an agent."""
+    """Assign an MCP server integration to an agent."""
     try:
+        from services.supabase_client import (
+            get_integrations, create_integration, update_integration,
+        )
+
         agent_name = args.get("agent_name", "").strip()
         server_name = args.get("server_name", "").strip()
         server_type = args.get("server_type", "stdio").strip()
@@ -1380,36 +1385,237 @@ async def assign_mcp_server_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("agent_name is required.")
         if not server_name:
             return _error_response("server_name is required.")
-        if not command:
-            return _error_response("command is required (the command to start the MCP server).")
 
         # Find agent
         agent = get_agent_by_name(_working_dir, agent_name)
         if not agent:
             return _error_response(f"Agent '{agent_name}' not found.")
 
-        # Build MCP server entry
-        mcp_entry = {
-            "name": server_name,
-            "type": server_type,
-            "command": command,
-        }
+        # Check if MCP integration with this name already exists
+        existing = await get_integrations(type_filter="mcp")
+        mcp_int = next((i for i in existing if i["name"] == server_name), None)
 
-        # Update agent's mcp_servers array
-        current_servers = agent.get("mcp_servers", [])
-        # Replace if server with same name exists, otherwise append
-        current_servers = [s for s in current_servers if s.get("name") != server_name]
-        current_servers.append(mcp_entry)
-        update_agent(_working_dir, agent["id"], {"mcp_servers": current_servers})
+        if not mcp_int:
+            if not command:
+                return _error_response(
+                    "command is required when creating a new MCP server "
+                    "(the command to start the MCP server)."
+                )
+            # Create new MCP integration
+            mcp_int = await create_integration(
+                name=server_name,
+                int_type="mcp",
+                method="MCP",
+                description=f"MCP server: {server_name}",
+                metadata={
+                    "server_type": server_type,
+                    "command": command,
+                    "args": [],
+                    "env": {},
+                    "url": "",
+                },
+            )
+
+        # Add agent to assigned_agents
+        current_agents: list[str] = mcp_int.get("assigned_agents", [])
+        if agent["id"] not in current_agents:
+            current_agents.append(agent["id"])
+            await update_integration(mcp_int["id"], assigned_agents=current_agents)
 
         return _text_response(
             f"Assigned MCP server '{server_name}' to {agent_name}.\n"
-            f"  Type: {server_type}\n"
-            f"  Command: {command}\n"
-            f"  Total MCP servers for {agent_name}: {len(current_servers)}"
+            f"  Integration ID: {mcp_int.get('id', 'N/A')}\n"
+            f"  Server type: {server_type}\n"
+            f"  Command: {command or mcp_int.get('metadata', {}).get('command', '(existing)')}\n"
+            f"  Total assigned agents: {len(current_agents)}"
         )
     except Exception as e:
         return _error_response(f"Failed to assign MCP server: {str(e)}")
+
+
+@tool(
+    "create_mcp_server",
+    "Create a new MCP (Model Context Protocol) server integration. "
+    "Shortcut for create_integration with type='mcp'. "
+    "server_type is 'stdio' (default) or 'sse'. "
+    "For stdio: provide 'command' and optional 'args' (JSON array). "
+    "For sse: provide 'url'. "
+    "Optional 'env' is a JSON object of environment variables for the server.",
+    {
+        "name": str, "server_type": str, "command": str, "args": str,
+        "url": str, "env": str, "description": str,
+    },
+)
+async def create_mcp_server_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Create a new MCP server integration."""
+    try:
+        from services.supabase_client import create_integration
+
+        name = args.get("name", "").strip()
+        if not name:
+            return _error_response("MCP server name is required.")
+
+        server_type = args.get("server_type", "stdio").strip()
+        command = args.get("command", "").strip()
+        url = args.get("url", "").strip()
+        description = args.get("description", "").strip()
+
+        # Parse args
+        args_str = args.get("args", "").strip()
+        mcp_args: list[str] = []
+        if args_str:
+            try:
+                mcp_args = json.loads(args_str)
+            except json.JSONDecodeError:
+                mcp_args = [a.strip() for a in args_str.split(",") if a.strip()]
+
+        # Parse env
+        env_str = args.get("env", "").strip()
+        mcp_env: dict[str, str] = {}
+        if env_str:
+            try:
+                mcp_env = json.loads(env_str)
+            except json.JSONDecodeError:
+                pass
+
+        integration = await create_integration(
+            name=name,
+            int_type="mcp",
+            base_url=url if server_type == "sse" else "",
+            method="MCP",
+            description=description or f"MCP server: {name}",
+            metadata={
+                "server_type": server_type,
+                "command": command,
+                "args": mcp_args,
+                "url": url,
+                "env": mcp_env,
+            },
+        )
+
+        return _text_response(
+            f"Created MCP server '{name}':\n"
+            f"  ID: {integration.get('id', 'N/A')}\n"
+            f"  Server type: {server_type}\n"
+            f"  Command: {command or '(none)'}\n"
+            f"  Args: {mcp_args}\n"
+            f"  URL: {url or '(none)'}\n"
+            f"  Description: {description[:100]}"
+        )
+    except Exception as e:
+        return _error_response(f"Failed to create MCP server: {str(e)}")
+
+
+@tool(
+    "list_mcp_servers",
+    "List all registered MCP server integrations with their configuration, "
+    "status, and assigned agents.",
+    {},
+)
+async def list_mcp_servers_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """List all MCP server integrations."""
+    try:
+        from services.supabase_client import get_integrations
+
+        servers = await get_integrations(type_filter="mcp")
+        if not servers:
+            return _text_response("No MCP servers configured yet.")
+
+        lines = [f"MCP Servers ({len(servers)} total):\n"]
+        for s in servers:
+            status = "enabled" if s.get("enabled") else "disabled"
+            agents = s.get("assigned_agents") or []
+            meta = s.get("metadata") or {}
+            lines.append(
+                f"  - {s['name']} ({s['id']})\n"
+                f"    Server type: {meta.get('server_type', 'stdio')}\n"
+                f"    Command: {meta.get('command', '(none)')}\n"
+                f"    Args: {meta.get('args', [])}\n"
+                f"    URL: {meta.get('url', '(none)')}\n"
+                f"    Env vars: {list(meta.get('env', {}).keys()) or '(none)'}\n"
+                f"    Status: {status}\n"
+                f"    Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
+                f"    Description: {s.get('description', '')[:80]}"
+            )
+
+        return _text_response("\n".join(lines))
+    except Exception as e:
+        return _error_response(f"Failed to list MCP servers: {str(e)}")
+
+
+@tool(
+    "update_mcp_server",
+    "Update an existing MCP server integration. Pass the integration_id and a "
+    "JSON string of fields to update. MCP-specific fields (command, args, url, "
+    "env, server_type) should be nested under a 'metadata' key.",
+    {"integration_id": str, "updates": str},
+)
+async def update_mcp_server_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Update an MCP server integration."""
+    try:
+        from services.supabase_client import get_integration, update_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        updates_str = args.get("updates", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+        if not updates_str:
+            return _error_response("updates JSON string is required.")
+
+        try:
+            updates = json.loads(updates_str)
+        except json.JSONDecodeError:
+            return _error_response("updates must be a valid JSON string.")
+
+        # Verify it's an MCP integration
+        existing = await get_integration(integration_id)
+        if not existing:
+            return _error_response(f"Integration not found: {integration_id}")
+        if existing.get("type") != "mcp":
+            return _error_response("This tool only updates MCP server integrations.")
+
+        # Merge metadata updates if provided
+        if "metadata" in updates:
+            current_meta = existing.get("metadata") or {}
+            current_meta.update(updates["metadata"])
+            updates["metadata"] = current_meta
+
+        updated = await update_integration(integration_id, **updates)
+        if not updated:
+            return _error_response(f"Failed to update MCP server: {integration_id}")
+
+        return _text_response(f"Updated MCP server {integration_id}: {json.dumps(updates)}")
+    except Exception as e:
+        return _error_response(f"Failed to update MCP server: {str(e)}")
+
+
+@tool(
+    "delete_mcp_server",
+    "Remove an MCP server integration by its ID.",
+    {"integration_id": str},
+)
+async def delete_mcp_server_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delete an MCP server integration."""
+    try:
+        from services.supabase_client import get_integration, delete_integration
+
+        integration_id = args.get("integration_id", "").strip()
+        if not integration_id:
+            return _error_response("integration_id is required.")
+
+        # Verify it's an MCP integration
+        existing = await get_integration(integration_id)
+        if not existing:
+            return _error_response(f"Integration not found: {integration_id}")
+        if existing.get("type") != "mcp":
+            return _error_response("This tool only deletes MCP server integrations.")
+
+        deleted = await delete_integration(integration_id)
+        if not deleted:
+            return _error_response(f"MCP server not found: {integration_id}")
+        return _text_response(f"Deleted MCP server: {existing.get('name', integration_id)}")
+    except Exception as e:
+        return _error_response(f"Failed to delete MCP server: {str(e)}")
 
 
 # ─── Self-Improvement Tools (Phase 5C) ─────────────────────────────
@@ -2104,9 +2310,12 @@ async def delete_task_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "create_integration",
-    "Register a new API or webhook integration. Stores the configuration in the "
-    "database and optionally saves credentials to .env.local. "
-    "Set type to 'api' for REST APIs or 'webhook' for webhooks. "
+    "Register a new API, webhook, or MCP server integration. Stores the "
+    "configuration in the database and optionally saves credentials to .env.local. "
+    "Set type to 'api' for REST APIs, 'webhook' for webhooks, or 'mcp' for MCP servers. "
+    "For MCP servers: set 'server_type' ('stdio' or 'sse'), 'command' (for stdio), "
+    "'mcp_args' (JSON array of command arguments), 'mcp_url' (for sse), and "
+    "'mcp_env' (JSON object of environment variables). "
     "auth_type can be 'bearer', 'api_key', 'basic', or 'none'. "
     "credential_env_key is the env var name (e.g. 'STRIPE_API_KEY') and "
     "credential_value is the actual secret to store.",
@@ -2114,10 +2323,12 @@ async def delete_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         "name": str, "type": str, "base_url": str, "method": str,
         "auth_type": str, "credential_env_key": str, "credential_value": str,
         "description": str, "documentation_url": str,
+        "server_type": str, "command": str, "mcp_args": str, "mcp_url": str,
+        "mcp_env": str,
     },
 )
 async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
-    """Create a new integration (API or webhook)."""
+    """Create a new integration (API, webhook, or MCP server)."""
     try:
         from services.supabase_client import create_integration
 
@@ -2125,8 +2336,8 @@ async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
         int_type = args.get("type", "").strip()
         if not name:
             return _error_response("Integration name is required.")
-        if int_type not in ("api", "webhook"):
-            return _error_response("type must be 'api' or 'webhook'.")
+        if int_type not in ("api", "webhook", "mcp"):
+            return _error_response("type must be 'api', 'webhook', or 'mcp'.")
 
         base_url = args.get("base_url", "").strip()
         method = args.get("method", "GET").strip().upper()
@@ -2160,6 +2371,41 @@ async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
                 f.writelines(lines)
             os.environ[credential_env_key] = credential_value
 
+        # Build MCP metadata if type is 'mcp'
+        metadata: dict[str, Any] = {}
+        if int_type == "mcp":
+            mcp_server_type = args.get("server_type", "stdio").strip()
+            mcp_command = args.get("command", "").strip()
+            mcp_url = args.get("mcp_url", "").strip()
+            mcp_args_str = args.get("mcp_args", "").strip()
+            mcp_env_str = args.get("mcp_env", "").strip()
+
+            mcp_args_list: list[str] = []
+            if mcp_args_str:
+                try:
+                    mcp_args_list = json.loads(mcp_args_str)
+                except json.JSONDecodeError:
+                    mcp_args_list = [a.strip() for a in mcp_args_str.split(",") if a.strip()]
+
+            mcp_env_dict: dict[str, str] = {}
+            if mcp_env_str:
+                try:
+                    mcp_env_dict = json.loads(mcp_env_str)
+                except json.JSONDecodeError:
+                    pass
+
+            metadata = {
+                "server_type": mcp_server_type,
+                "command": mcp_command,
+                "args": mcp_args_list,
+                "url": mcp_url,
+                "env": mcp_env_dict,
+            }
+            # For SSE servers, store the URL as base_url too
+            if mcp_server_type == "sse" and mcp_url:
+                base_url = mcp_url
+            method = "MCP"
+
         integration = await create_integration(
             name=name,
             int_type=int_type,
@@ -2169,7 +2415,19 @@ async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
             credential_env_key=credential_env_key,
             description=description,
             documentation_url=documentation_url,
+            metadata=metadata if metadata else None,
         )
+
+        if int_type == "mcp":
+            return _text_response(
+                f"Created MCP server integration '{name}':\n"
+                f"  ID: {integration.get('id', 'N/A')}\n"
+                f"  Server type: {metadata.get('server_type', 'stdio')}\n"
+                f"  Command: {metadata.get('command', '(none)')}\n"
+                f"  Args: {metadata.get('args', [])}\n"
+                f"  URL: {metadata.get('url', '(none)')}\n"
+                f"  Description: {description[:100]}"
+            )
 
         return _text_response(
             f"Created {int_type} integration '{name}':\n"
@@ -2185,8 +2443,9 @@ async def create_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "list_integrations",
-    "List all registered API and webhook integrations with their configuration, "
-    "status, and assigned agents. Optionally filter by type ('api' or 'webhook').",
+    "List all registered API, webhook, and MCP server integrations with their "
+    "configuration, status, and assigned agents. Optionally filter by type "
+    "('api', 'webhook', or 'mcp').",
     {"type_filter": str},
 )
 async def list_integrations_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -2204,16 +2463,31 @@ async def list_integrations_tool(args: dict[str, Any]) -> dict[str, Any]:
         for i in integrations:
             status = "enabled" if i.get("enabled") else "disabled"
             agents = i.get("assigned_agents") or []
-            lines.append(
-                f"  - {i['name']} ({i['id']})\n"
-                f"    Type: {i['type']}\n"
-                f"    URL: {i.get('base_url', '')}\n"
-                f"    Method: {i.get('method', 'GET')}\n"
-                f"    Auth: {i.get('auth_type', 'none')}\n"
-                f"    Status: {status}\n"
-                f"    Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
-                f"    Description: {i.get('description', '')[:80]}"
-            )
+            meta = i.get("metadata") or {}
+
+            if i["type"] == "mcp":
+                lines.append(
+                    f"  - {i['name']} ({i['id']})\n"
+                    f"    Type: mcp\n"
+                    f"    Server type: {meta.get('server_type', 'stdio')}\n"
+                    f"    Command: {meta.get('command', '(none)')}\n"
+                    f"    Args: {meta.get('args', [])}\n"
+                    f"    URL: {meta.get('url', '(none)')}\n"
+                    f"    Status: {status}\n"
+                    f"    Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
+                    f"    Description: {i.get('description', '')[:80]}"
+                )
+            else:
+                lines.append(
+                    f"  - {i['name']} ({i['id']})\n"
+                    f"    Type: {i['type']}\n"
+                    f"    URL: {i.get('base_url', '')}\n"
+                    f"    Method: {i.get('method', 'GET')}\n"
+                    f"    Auth: {i.get('auth_type', 'none')}\n"
+                    f"    Status: {status}\n"
+                    f"    Assigned agents: {', '.join(agents) if agents else '(none)'}\n"
+                    f"    Description: {i.get('description', '')[:80]}"
+                )
 
         return _text_response("\n".join(lines))
     except Exception as e:
@@ -2320,7 +2594,7 @@ async def update_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "delete_integration",
-    "Remove an API or webhook integration by its ID.",
+    "Remove an API, webhook, or MCP server integration by its ID.",
     {"integration_id": str},
 )
 async def delete_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -2342,8 +2616,8 @@ async def delete_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "assign_integration",
-    "Assign an API or webhook integration to one or more subagents so they "
-    "can use it during tasks. Pass agent IDs as a comma-separated string.",
+    "Assign an API, webhook, or MCP server integration to one or more subagents "
+    "so they can use it during tasks. Pass agent IDs as a comma-separated string.",
     {"integration_id": str, "agent_ids": str},
 )
 async def assign_integration_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -3518,6 +3792,10 @@ registry_mcp_server = create_sdk_mcp_server(
         delete_trigger_tool,
         # Phase 4E: MCP Server Management
         assign_mcp_server_tool,
+        create_mcp_server_tool,
+        list_mcp_servers_tool,
+        update_mcp_server_tool,
+        delete_mcp_server_tool,
         # Phase 5C: Self-Improvement
         review_agent_performance_tool,
         improve_agent_prompt_tool,
