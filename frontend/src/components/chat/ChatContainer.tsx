@@ -95,6 +95,29 @@ export function ChatContainer() {
 
   const handleMessage = useCallback(
     (msg: WebSocketMessage) => {
+      /** Ensure a streaming message bubble exists for attaching steps/activities.
+       *  tool_use and agent_activity can arrive before any assistant_text. */
+      const ensureStreamingMsg = (): string => {
+        if (streamingMsgId.current) return streamingMsgId.current;
+        if (lastAgentMsgId.current) return lastAgentMsgId.current;
+        const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        streamingMsgId.current = id;
+        lastAgentMsgId.current = id;
+        setStreaming(true);
+        if (sessionIdRef.current) setSessionStreaming(sessionIdRef.current, true);
+        addMessage({
+          id,
+          sessionId: "",
+          role: "clyde",
+          agentName: "Clyde",
+          content: "",
+          createdAt: new Date().toISOString(),
+          isStreaming: true,
+          metadata: { model_tier: "opus" },
+        });
+        return id;
+      };
+
       switch (msg.type) {
         case "init": {
           const sid = msg.data.session_id as string | null;
@@ -365,17 +388,15 @@ export function ChatContainer() {
 
         case "tool_use": {
           {
-            const stepTarget = streamingMsgId.current || lastAgentMsgId.current;
-            if (stepTarget) {
-              const toolName = msg.data.tool as string;
-              const toolInput = msg.data.input as string | undefined;
-              addStepToMessage(stepTarget, {
-                type: "tool_use",
-                label: toolName,
-                detail: toolInput ? toolInput.slice(0, 200) : undefined,
-                timestamp: new Date().toISOString(),
-              });
-            }
+            const stepTarget = ensureStreamingMsg();
+            const toolName = msg.data.tool as string;
+            const toolInput = msg.data.input as string | undefined;
+            addStepToMessage(stepTarget, {
+              type: "tool_use",
+              label: toolName,
+              detail: toolInput ? toolInput.slice(0, 200) : undefined,
+              timestamp: new Date().toISOString(),
+            });
           }
           break;
         }
@@ -457,15 +478,13 @@ export function ChatContainer() {
 
           // Track as a step on the current or last agent message
           {
-            const stepTarget = streamingMsgId.current || lastAgentMsgId.current;
-            if (stepTarget) {
-              addStepToMessage(stepTarget, {
-                type: eventType === "started" ? "agent_started" : "agent_stopped",
-                label: regName,
-                detail: isTeamMember ? "Team member" : "Subagent",
-                timestamp: new Date().toISOString(),
-              });
-            }
+            const stepTarget = ensureStreamingMsg();
+            addStepToMessage(stepTarget, {
+              type: eventType === "started" ? "agent_started" : "agent_stopped",
+              label: regName,
+              detail: isTeamMember ? "Team member" : "Subagent",
+              timestamp: new Date().toISOString(),
+            });
           }
 
           // Update active agent tracking — use registry data from backend
@@ -680,32 +699,28 @@ export function ChatContainer() {
         }
 
         case "visualization": {
-          const vizTarget = streamingMsgId.current || lastAgentMsgId.current;
-          if (vizTarget) {
-            addVisualizationToMessage(vizTarget, {
-              id: msg.data.vis_id as string,
-              title: msg.data.title as string,
-              htmlContent: msg.data.html_content as string,
-              description: (msg.data.description as string) || undefined,
-            });
-          }
+          const vizTarget = ensureStreamingMsg();
+          addVisualizationToMessage(vizTarget, {
+            id: msg.data.vis_id as string,
+            title: msg.data.title as string,
+            htmlContent: msg.data.html_content as string,
+            description: (msg.data.description as string) || undefined,
+          });
           break;
         }
 
         case "visual": {
-          const visualTarget = streamingMsgId.current || lastAgentMsgId.current;
-          if (visualTarget) {
-            addVisualToMessage(visualTarget, {
-              id: msg.data.vis_id as string,
-              title: msg.data.title as string,
-              mode: msg.data.mode as "chart" | "code",
-              chartType: (msg.data.chart_type as string) || undefined,
-              data: (msg.data.data as Record<string, unknown>) || undefined,
-              options: (msg.data.options as Record<string, unknown>) || undefined,
-              code: (msg.data.code as string) || undefined,
-              description: (msg.data.description as string) || undefined,
-            });
-          }
+          const visualTarget = ensureStreamingMsg();
+          addVisualToMessage(visualTarget, {
+            id: msg.data.vis_id as string,
+            title: msg.data.title as string,
+            mode: msg.data.mode as "chart" | "code",
+            chartType: (msg.data.chart_type as string) || undefined,
+            data: (msg.data.data as Record<string, unknown>) || undefined,
+            options: (msg.data.options as Record<string, unknown>) || undefined,
+            code: (msg.data.code as string) || undefined,
+            description: (msg.data.description as string) || undefined,
+          });
           break;
         }
       }
