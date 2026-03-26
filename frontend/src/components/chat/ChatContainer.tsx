@@ -70,6 +70,19 @@ export function ChatContainer() {
   const updateColumnInStore = useTaskStore((s) => s.updateColumn);
   const removeColumnFromStore = useTaskStore((s) => s.removeColumn);
 
+  // Per-session streaming tracking
+  const setSessionStreaming = useChatStore((s) => s.setSessionStreaming);
+  const streamingSessions = useChatStore((s) => s.streamingSessions);
+  const streamingSessionsRef = useRef(streamingSessions);
+  streamingSessionsRef.current = streamingSessions;
+
+  // Keep a ref to current sessionId for use inside callbacks
+  const sessionIdRef = useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
+
+  // Per-session message cache — preserves messages when switching sessions
+  const sessionCacheRef = useRef<Map<string, Message[]>>(new Map());
+
   // Track current streaming message id and the last agent message (for cost attachment)
   const streamingMsgId = useRef<string | null>(null);
   const lastAgentMsgId = useRef<string | null>(null);
@@ -293,6 +306,7 @@ export function ChatContainer() {
               streamingMsgId.current = id;
               lastAgentMsgId.current = id;
               setStreaming(true);
+              if (sessionIdRef.current) setSessionStreaming(sessionIdRef.current, true);
               addMessage({
                 id,
                 sessionId: "",
@@ -383,6 +397,7 @@ export function ChatContainer() {
           streamingMsgId.current = null;
           lastAgentMsgId.current = null;
           setStreaming(false);
+          if (sessionIdRef.current) setSessionStreaming(sessionIdRef.current, false);
           // Notify TopBar to refresh the daily cost
           window.dispatchEvent(new Event("cost-updated"));
           break;
@@ -393,6 +408,7 @@ export function ChatContainer() {
           streamingMsgId.current = null;
           lastAgentMsgId.current = null;
           setStreaming(false);
+          if (sessionIdRef.current) setSessionStreaming(sessionIdRef.current, false);
           setLoadingSession(false);
           break;
         }
@@ -737,10 +753,86 @@ export function ChatContainer() {
     setConnected(false);
   }, [setConnected]);
 
+  /**
+   * Lightweight handler for messages from background WebSocket connections.
+   * Only processes events needed for per-session streaming tracking,
+   * sidebar updates, and global events (tasks). The full message
+   * history is reloaded when the user switches back to that session.
+   */
+  const handleBackgroundMessage = useCallback(
+    (bgSessionId: string | null, msg: WebSocketMessage) => {
+      switch (msg.type) {
+        case "result":
+          if (bgSessionId) setSessionStreaming(bgSessionId, false);
+          window.dispatchEvent(new Event("cost-updated"));
+          break;
+        case "error":
+          if (bgSessionId) setSessionStreaming(bgSessionId, false);
+          break;
+        case "session_created": {
+          const newSid = msg.data.session_id as string;
+          const title = (msg.data.title as string) || "New Chat";
+          const createdAt = (msg.data.created_at as string) || new Date().toISOString();
+          addSession({
+            id: newSid,
+            title,
+            messageCount: 1,
+            lastMessagePreview: "",
+            totalCost: 0,
+            createdAt,
+            updatedAt: createdAt,
+          });
+          break;
+        }
+        case "session_title_update": {
+          const sid = msg.data.session_id as string;
+          const title = msg.data.title as string;
+          if (sid && title) updateSessionTitle(sid, title);
+          break;
+        }
+        // Global events — process regardless of which session they come from
+        case "task_created":
+          addTaskToStore(msg.data as Task);
+          break;
+        case "task_updated": {
+          const t = msg.data as Task;
+          updateTaskInStore(t.id, t);
+          break;
+        }
+        case "task_deleted":
+          removeTaskFromStore(msg.data.id as string);
+          break;
+        case "task_column_created":
+          addColumnToStore(msg.data as TaskColumn);
+          break;
+        case "task_column_updated": {
+          const c = msg.data as TaskColumn;
+          updateColumnInStore(c.id, c);
+          break;
+        }
+        case "task_column_deleted":
+          removeColumnFromStore(msg.data.id as string);
+          break;
+      }
+    },
+    [
+      setSessionStreaming,
+      addSession,
+      updateSessionTitle,
+      addTaskToStore,
+      updateTaskInStore,
+      removeTaskFromStore,
+      addColumnToStore,
+      updateColumnInStore,
+      removeColumnFromStore,
+    ]
+  );
+
   const { connect, send, disconnect } = useAgentWebSocket(
     handleMessage,
     handleConnect,
-    handleDisconnect
+    handleDisconnect,
+    handleBackgroundMessage
   );
 
   // Keep send ref updated
@@ -881,33 +973,69 @@ export function ChatContainer() {
   useEffect(() => {
     const handleSwitch = (e: Event) => {
       const { sessionId: targetId } = (e as CustomEvent).detail;
-      setLoadingSession(true);
-      setStreaming(false);
-      clearMessages();
-      clearActivityEvents();
-      setStreaming(false);
+
+      // Save current session's messages to cache before switching
+      const currentId = sessionIdRef.current;
+      if (currentId) {
+        sessionCacheRef.current.set(currentId, [...messagesRef.current]);
+      }
+
+      // Reset per-message tracking
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
-      disconnect();
+      lastFinishedMsgId.current = null;
+      activityMsgIds.current = {};
+      clearActivityEvents();
+
+      // Switch to target session — sync isStreaming from per-session state
+      setSessionId(targetId);
+      setStreaming(!!streamingSessionsRef.current[targetId]);
+
+      // Persist active session for page refresh recovery
       if (targetId) {
         sessionStorage.setItem("clyde_active_session", targetId);
       } else {
         sessionStorage.removeItem("clyde_active_session");
       }
+
+      // Show cached messages immediately (or loading state)
+      const cached = sessionCacheRef.current.get(targetId);
+      if (cached && cached.length > 0) {
+        setMessages(cached);
+        messagesRef.current = cached;
+        setLoadingSession(false);
+      } else {
+        clearMessages();
+        setLoadingSession(true);
+      }
+
+      // DON'T disconnect old connection — it continues streaming in the background.
+      // Create a new connection for the target session (backend sends session_history).
       connect(targetId || undefined);
     };
 
     const handleNewChat = () => {
-      setLoadingSession(true);
-      setStreaming(false);
+      // Save current session's messages to cache
+      const currentId = sessionIdRef.current;
+      if (currentId) {
+        sessionCacheRef.current.set(currentId, [...messagesRef.current]);
+      }
+
+      // Reset display state for a fresh empty chat
       clearMessages();
       clearActivityEvents();
       setStreaming(false);
       streamingMsgId.current = null;
       lastAgentMsgId.current = null;
-      disconnect();
+      lastFinishedMsgId.current = null;
+      activityMsgIds.current = {};
+      setStreaming(false);
+      setLoadingSession(true);
       sessionStorage.removeItem("clyde_active_session");
-      connect(); // no sessionId = new session
+
+      // DON'T disconnect old connection — it continues in the background.
+      // Create a new connection for a brand-new session.
+      connect();
     };
 
     window.addEventListener("session-switch", handleSwitch);
@@ -916,8 +1044,8 @@ export function ChatContainer() {
       window.removeEventListener("session-switch", handleSwitch);
       window.removeEventListener("new-chat", handleNewChat);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- clearActivityEvents & setStreaming are stable Zustand actions
-  }, [connect, disconnect, clearMessages, setLoadingSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Zustand actions are stable
+  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages]);
 
   // Listen for permission-response events from AppShell/PermissionStack
   useEffect(() => {
