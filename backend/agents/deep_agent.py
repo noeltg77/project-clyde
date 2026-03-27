@@ -249,11 +249,6 @@ class DeepAgentChatManager:
             api_key=api_key,
             streaming=True,
             temperature=0.7,
-            # Pass Clyde identification to OpenRouter
-            extra_headers={
-                "HTTP-Referer": "https://clyde.ai",
-                "X-Title": "Clyde AI Agent",
-            },
         )
 
         # Get all tools adapted for LangChain
