@@ -51,6 +51,8 @@ export type PendingPermission = {
   agentName: string;
   modelTier: AgentModel;
   timestamp: string;
+  /** Session this permission belongs to — used for routing responses to the correct WebSocket */
+  sessionId?: string;
 };
 
 export type ActiveAgentMeta = {

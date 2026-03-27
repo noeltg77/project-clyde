@@ -13,6 +13,7 @@ import {
   useAgentWebSocket,
   type WebSocketMessage,
 } from "@/hooks/useAgentWebSocket";
+import type { ActivityEvent } from "@/stores/agent-store";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import type { Message, MessageStep } from "@/stores/chat-store";
@@ -43,6 +44,12 @@ export function ChatContainer() {
 
   // Agent store state + actions
   const agents = useAgentStore((s) => s.agents);
+  const activityEvents = useAgentStore((s) => s.activityEvents);
+  const activityEventsRef = useRef(activityEvents);
+  activityEventsRef.current = activityEvents;
+  const pendingPermissions = useAgentStore((s) => s.pendingPermissions);
+  const pendingPermissionsRef = useRef(pendingPermissions);
+  pendingPermissionsRef.current = pendingPermissions;
   const addPendingPermission = useAgentStore((s) => s.addPendingPermission);
   const removePendingPermission = useAgentStore(
     (s) => s.removePendingPermission
@@ -91,10 +98,26 @@ export function ChatContainer() {
   // Track inline activity message IDs per agent (for updating working→complete)
   const activityMsgIds = useRef<Record<string, { msgId: string; startTime: number }>>({});
   // Keep a ref to current messages so handlers within the same tick can read latest state
+  const messages = useChatStore((s) => s.messages);
   const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
 
   // Keep a ref to the send function so permission handlers can use it
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
+  // Per-connection send for permission routing
+  const sendToSessionRef = useRef<(sessionId: string, data: Record<string, unknown>) => void>(() => {});
+
+  // --- Per-session streaming state cache ---
+  // Saves/restores streaming tracking refs when switching sessions
+  type SessionStreamingState = {
+    streamingMsgId: string | null;
+    lastAgentMsgId: string | null;
+    lastFinishedMsgId: string | null;
+    activityMsgIds: Record<string, { msgId: string; startTime: number }>;
+  };
+  const sessionStateCacheRef = useRef<Map<string, SessionStreamingState>>(new Map());
+  // Per-session activity event cache
+  const sessionActivityCacheRef = useRef<Map<string, ActivityEvent[]>>(new Map());
 
   const handleMessage = useCallback(
     (msg: WebSocketMessage) => {
@@ -423,6 +446,7 @@ export function ChatContainer() {
             agentName: (msg.data.agent_name as string) || "Clyde",
             modelTier: (msg.data.model_tier as "opus" | "sonnet" | "haiku") || "opus",
             timestamp: new Date().toISOString(),
+            sessionId: sessionIdRef.current || undefined,
           });
           break;
         }
@@ -828,15 +852,16 @@ export function ChatContainer() {
     ]
   );
 
-  const { connect, send, disconnect } = useAgentWebSocket(
+  const { connect, send, sendToSession, drainBuffer, hasLiveConnection, disconnect } = useAgentWebSocket(
     handleMessage,
     handleConnect,
     handleDisconnect,
     handleBackgroundMessage
   );
 
-  // Keep send ref updated
+  // Keep send refs updated
   sendRef.current = send;
+  sendToSessionRef.current = sendToSession;
 
   // Boot sequence: agents + WebSocket first (fast), then session history (slow)
   useEffect(() => {
@@ -969,59 +994,113 @@ export function ChatContainer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setSessions, setAgents, setTeams, setOrchestrator, setDebugEnabled]);
 
+  // --- Helper: save current session state before switching away ---
+  const _saveCurrentSessionState = useCallback(() => {
+    const currentId = sessionIdRef.current;
+    if (currentId) {
+      // Cache messages
+      sessionCacheRef.current.set(currentId, [...messagesRef.current]);
+      // Cache streaming refs
+      sessionStateCacheRef.current.set(currentId, {
+        streamingMsgId: streamingMsgId.current,
+        lastAgentMsgId: lastAgentMsgId.current,
+        lastFinishedMsgId: lastFinishedMsgId.current,
+        activityMsgIds: { ...activityMsgIds.current },
+      });
+    }
+  }, []);
+
+  // --- Helper: restore session state when switching to a session ---
+  const _restoreSessionState = useCallback((targetId: string) => {
+    const cached = sessionStateCacheRef.current.get(targetId);
+    if (cached) {
+      streamingMsgId.current = cached.streamingMsgId;
+      lastAgentMsgId.current = cached.lastAgentMsgId;
+      lastFinishedMsgId.current = cached.lastFinishedMsgId;
+      activityMsgIds.current = { ...cached.activityMsgIds };
+    } else {
+      streamingMsgId.current = null;
+      lastAgentMsgId.current = null;
+      lastFinishedMsgId.current = null;
+      activityMsgIds.current = {};
+    }
+
+    // Restore activity events
+    const cachedActivity = sessionActivityCacheRef.current.get(targetId);
+    if (cachedActivity && cachedActivity.length > 0) {
+      setActivityEvents(cachedActivity);
+    } else {
+      clearActivityEvents();
+    }
+  }, [setActivityEvents, clearActivityEvents]);
+
   // Listen for session-switch events from Sidebar
   useEffect(() => {
     const handleSwitch = (e: Event) => {
       const { sessionId: targetId } = (e as CustomEvent).detail;
 
-      // Save current session's messages to cache before switching
+      // 1. Save current session state (messages, streaming refs, activity events)
+      _saveCurrentSessionState();
+      // Also cache the live activity events
       const currentId = sessionIdRef.current;
       if (currentId) {
-        sessionCacheRef.current.set(currentId, [...messagesRef.current]);
+        sessionActivityCacheRef.current.set(currentId, [...activityEventsRef.current]);
       }
 
-      // Reset per-message tracking
-      streamingMsgId.current = null;
-      lastAgentMsgId.current = null;
-      lastFinishedMsgId.current = null;
-      activityMsgIds.current = {};
-      clearActivityEvents();
-
-      // Switch to target session — sync isStreaming from per-session state
+      // 2. Switch to target session
       setSessionId(targetId);
       setStreaming(!!streamingSessionsRef.current[targetId]);
 
-      // Persist active session for page refresh recovery
+      // 3. Persist active session for page refresh recovery
       if (targetId) {
         sessionStorage.setItem("clyde_active_session", targetId);
       } else {
         sessionStorage.removeItem("clyde_active_session");
       }
 
-      // Show cached messages immediately (or loading state)
+      // 4. Show cached messages immediately (or loading state)
       const cached = sessionCacheRef.current.get(targetId);
       if (cached && cached.length > 0) {
         setMessages(cached);
         messagesRef.current = cached;
-        setLoadingSession(false);
       } else {
         clearMessages();
-        setLoadingSession(true);
+        messagesRef.current = [];
       }
 
-      // DON'T disconnect old connection — it continues streaming in the background.
-      // Create a new connection for the target session (backend sends session_history).
-      connect(targetId || undefined);
+      // 5. Restore per-session streaming refs and activity events
+      _restoreSessionState(targetId);
+
+      // 6. Re-promote existing background connection OR create new one
+      if (targetId && hasLiveConnection(targetId)) {
+        // Re-promote the existing background connection to active
+        connect(targetId);
+        setLoadingSession(false);
+
+        // Replay buffered messages that arrived while this session was in the background
+        const buffered = drainBuffer(targetId);
+        for (const msg of buffered) {
+          handleMessage(msg);
+        }
+      } else {
+        // No live connection — create a new one (backend will send session_history)
+        if (!cached || cached.length === 0) {
+          setLoadingSession(true);
+        }
+        connect(targetId || undefined);
+      }
     };
 
     const handleNewChat = () => {
-      // Save current session's messages to cache
+      // 1. Save current session state
+      _saveCurrentSessionState();
+      // Also cache activity events for the current session
       const currentId = sessionIdRef.current;
       if (currentId) {
-        sessionCacheRef.current.set(currentId, [...messagesRef.current]);
+        sessionActivityCacheRef.current.set(currentId, [...activityEventsRef.current]);
       }
 
-      // Reset display state for a fresh empty chat
+      // 2. Reset display state for a fresh empty chat
       clearMessages();
       clearActivityEvents();
       setStreaming(false);
@@ -1029,11 +1108,11 @@ export function ChatContainer() {
       lastAgentMsgId.current = null;
       lastFinishedMsgId.current = null;
       activityMsgIds.current = {};
-      setStreaming(false);
+      messagesRef.current = [];
       setLoadingSession(true);
       sessionStorage.removeItem("clyde_active_session");
 
-      // DON'T disconnect old connection — it continues in the background.
+      // 3. DON'T disconnect old connection — it continues in the background.
       // Create a new connection for a brand-new session.
       connect();
     };
@@ -1045,13 +1124,22 @@ export function ChatContainer() {
       window.removeEventListener("new-chat", handleNewChat);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Zustand actions are stable
-  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages]);
+  }, [connect, clearMessages, setLoadingSession, setSessionId, setStreaming, setMessages, hasLiveConnection, drainBuffer, handleMessage, _saveCurrentSessionState, _restoreSessionState, clearActivityEvents]);
 
   // Listen for permission-response events from AppShell/PermissionStack
   useEffect(() => {
     const handlePermEvent = (e: Event) => {
       const { id, decision } = (e as CustomEvent).detail;
-      sendRef.current({ type: "permission_response", id, decision });
+      // Look up which session this permission belongs to so we route to the correct WebSocket
+      const perm = pendingPermissionsRef.current.find((p) => p.id === id);
+      const permSessionId = perm?.sessionId;
+      if (permSessionId) {
+        // Route to the specific session's connection (may be a background connection)
+        sendToSessionRef.current(permSessionId, { type: "permission_response", id, decision });
+      } else {
+        // Fallback: send on active connection
+        sendRef.current({ type: "permission_response", id, decision });
+      }
     };
     window.addEventListener("permission-response", handlePermEvent);
     return () =>
@@ -1192,7 +1280,14 @@ export function ChatContainer() {
   // Permission response handler — exposed via context or prop drilling
   const handlePermissionResponse = useCallback(
     (id: string, decision: string) => {
-      sendRef.current({ type: "permission_response", id, decision });
+      // Route to the correct session's WebSocket connection
+      const perm = pendingPermissionsRef.current.find((p) => p.id === id);
+      const permSessionId = perm?.sessionId;
+      if (permSessionId) {
+        sendToSessionRef.current(permSessionId, { type: "permission_response", id, decision });
+      } else {
+        sendRef.current({ type: "permission_response", id, decision });
+      }
       removePendingPermission(id);
     },
     [removePendingPermission]

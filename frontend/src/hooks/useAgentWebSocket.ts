@@ -34,12 +34,16 @@ export type WebSocketMessage = {
   data: Record<string, unknown>;
 };
 
+/** Max buffered messages per background session to prevent memory leaks */
+const MAX_BUFFER_SIZE = 500;
+
 /**
  * Multi-connection WebSocket hook for concurrent chat sessions.
  *
  * Maintains a pool of WebSocket connections. The "active" connection
  * routes messages to onMessage; background connections route to
- * onBackgroundMessage for lightweight tracking (streaming state, titles, etc.).
+ * onBackgroundMessage for lightweight tracking (streaming state, titles, etc.)
+ * AND buffer messages for replay when the user switches back.
  */
 export function useAgentWebSocket(
   onMessage: (msg: WebSocketMessage) => void,
@@ -53,6 +57,12 @@ export function useAgentWebSocket(
   const connMetaRef = useRef<Map<string, string | undefined>>(new Map());
   // Which connection is currently "active" (displayed in the UI)
   const activeConnIdRef = useRef<string | null>(null);
+
+  // Session → connId mapping for re-promotion
+  const sessionConnMapRef = useRef<Map<string, string>>(new Map());
+
+  // Background message buffers: sessionId → messages[]
+  const backgroundBuffersRef = useRef<Map<string, WebSocketMessage[]>>(new Map());
 
   const isMounted = useRef(true);
   const reconnectTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -76,10 +86,41 @@ export function useAgentWebSocket(
   }, []);
 
   /**
-   * Open a new WebSocket connection. The new connection becomes
-   * the active connection. Returns a connection ID.
+   * Open a new WebSocket connection OR re-promote an existing background
+   * connection for the given session. The connection becomes the active
+   * connection. Returns a connection ID.
    */
   const connect = useCallback((sessionId?: string): string => {
+    // --- Re-promotion: check if a live background connection exists for this session ---
+    if (sessionId) {
+      const existingConnId = sessionConnMapRef.current.get(sessionId);
+      if (existingConnId && existingConnId !== activeConnIdRef.current) {
+        const existingWs = connectionsRef.current.get(existingConnId);
+        if (existingWs && existingWs.readyState === WebSocket.OPEN) {
+          // Clear any pending reconnect for the previously active connection
+          const prevActive = activeConnIdRef.current;
+          if (prevActive) {
+            const timeout = reconnectTimeouts.current.get(prevActive);
+            if (timeout) {
+              clearTimeout(timeout);
+              reconnectTimeouts.current.delete(prevActive);
+            }
+          }
+
+          // Promote this background connection to active
+          activeConnIdRef.current = existingConnId;
+
+          // Fire onConnect since we now have an active connection
+          if (isMounted.current) {
+            onConnectRef.current();
+          }
+
+          return existingConnId;
+        }
+      }
+    }
+
+    // --- No existing connection to re-promote: create a new one ---
     const connId = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
     // Clear any pending reconnect for the previously active connection
@@ -103,6 +144,11 @@ export function useAgentWebSocket(
     connMetaRef.current.set(connId, sessionId);
     activeConnIdRef.current = connId;
 
+    // Register in session→conn map
+    if (sessionId) {
+      sessionConnMapRef.current.set(sessionId, connId);
+    }
+
     ws.onopen = () => {
       if (!isMounted.current) return;
       // Only fire onConnect for the active connection
@@ -114,6 +160,12 @@ export function useAgentWebSocket(
     ws.onclose = () => {
       if (!isMounted.current) return;
       connectionsRef.current.delete(connId);
+
+      // Clean up session→conn map
+      const sid = connMetaRef.current.get(connId);
+      if (sid && sessionConnMapRef.current.get(sid) === connId) {
+        sessionConnMapRef.current.delete(sid);
+      }
       connMetaRef.current.delete(connId);
 
       if (connId === activeConnIdRef.current) {
@@ -140,12 +192,27 @@ export function useAgentWebSocket(
           // Active connection → full message handling
           onMessageRef.current(parsed);
         } else {
-          // Background connection → lightweight handling
+          // Background connection → lightweight handling + buffering
           // Learn sessionId from session_created if we don't have it yet
           if (parsed.type === "session_created" && parsed.data?.session_id) {
-            connMetaRef.current.set(connId, parsed.data.session_id as string);
+            const newSid = parsed.data.session_id as string;
+            connMetaRef.current.set(connId, newSid);
+            sessionConnMapRef.current.set(newSid, connId);
           }
           const sid = connMetaRef.current.get(connId) || null;
+
+          // Buffer the message for replay when user switches back
+          if (sid) {
+            let buffer = backgroundBuffersRef.current.get(sid);
+            if (!buffer) {
+              buffer = [];
+              backgroundBuffersRef.current.set(sid, buffer);
+            }
+            if (buffer.length < MAX_BUFFER_SIZE) {
+              buffer.push(parsed);
+            }
+          }
+
           onBackgroundMessageRef.current?.(sid, parsed);
         }
       } catch {
@@ -173,6 +240,40 @@ export function useAgentWebSocket(
   }, []);
 
   /**
+   * Send data to a specific session's connection (not just the active one).
+   * Used for permission responses that need to reach the correct backend session.
+   */
+  const sendToSession = useCallback((sessionId: string, data: Record<string, unknown>) => {
+    const connId = sessionConnMapRef.current.get(sessionId);
+    if (!connId) return;
+    const ws = connectionsRef.current.get(connId);
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data));
+    }
+  }, []);
+
+  /**
+   * Drain and return all buffered background messages for a session.
+   * Clears the buffer after draining.
+   */
+  const drainBuffer = useCallback((sessionId: string): WebSocketMessage[] => {
+    const buffer = backgroundBuffersRef.current.get(sessionId);
+    if (!buffer || buffer.length === 0) return [];
+    backgroundBuffersRef.current.delete(sessionId);
+    return buffer;
+  }, []);
+
+  /**
+   * Check if a live background connection exists for a session.
+   */
+  const hasLiveConnection = useCallback((sessionId: string): boolean => {
+    const connId = sessionConnMapRef.current.get(sessionId);
+    if (!connId) return false;
+    const ws = connectionsRef.current.get(connId);
+    return !!ws && ws.readyState === WebSocket.OPEN;
+  }, []);
+
+  /**
    * Close a specific connection by ID, or all connections if no ID given.
    */
   const disconnect = useCallback((connId?: string) => {
@@ -184,6 +285,11 @@ export function useAgentWebSocket(
         ws.onerror = null;
         ws.close();
         connectionsRef.current.delete(id);
+      }
+      // Clean up session→conn map
+      const sid = connMetaRef.current.get(id);
+      if (sid && sessionConnMapRef.current.get(sid) === id) {
+        sessionConnMapRef.current.delete(sid);
       }
       connMetaRef.current.delete(id);
       const timeout = reconnectTimeouts.current.get(id);
@@ -218,6 +324,8 @@ export function useAgentWebSocket(
       }
       connectionsRef.current.clear();
       connMetaRef.current.clear();
+      sessionConnMapRef.current.clear();
+      backgroundBuffersRef.current.clear();
       for (const timeout of reconnectTimeouts.current.values()) {
         clearTimeout(timeout);
       }
@@ -225,5 +333,5 @@ export function useAgentWebSocket(
     };
   }, []);
 
-  return { connect, send, disconnect };
+  return { connect, send, sendToSession, drainBuffer, hasLiveConnection, disconnect };
 }
