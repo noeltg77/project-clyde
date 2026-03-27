@@ -135,20 +135,59 @@ export function CostDashboard() {
   const hasOpenAI = data.daily_breakdown.some((d) => (d.openai ?? 0) > 0);
   const hasAnyPlatform = hasClaude || hasGemini || hasOpenAI;
 
-  // Format daily chart data — show short day labels
-  const chartData = data.daily_breakdown.map((d) => {
-    const date = new Date(d.date);
-    return {
-      label: date.toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "short",
-      }),
-      cost: d.cost_usd,
-      claude: d.claude ?? 0,
-      gemini: d.gemini ?? 0,
-      openai: d.openai ?? 0,
-    };
-  });
+  // For year/ytd ranges, aggregate daily data into monthly buckets
+  const useMonthly =
+    currentRange.days === 365 || currentRange.rangeType === "ytd";
+
+  const chartData = (() => {
+    if (useMonthly) {
+      const monthMap: Record<
+        string,
+        { cost: number; claude: number; gemini: number; openai: number }
+      > = {};
+      for (const d of data.daily_breakdown) {
+        const monthKey = d.date.slice(0, 7); // "YYYY-MM"
+        if (!monthMap[monthKey]) {
+          monthMap[monthKey] = { cost: 0, claude: 0, gemini: 0, openai: 0 };
+        }
+        monthMap[monthKey].cost += d.cost_usd;
+        monthMap[monthKey].claude += d.claude ?? 0;
+        monthMap[monthKey].gemini += d.gemini ?? 0;
+        monthMap[monthKey].openai += d.openai ?? 0;
+      }
+      return Object.entries(monthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, vals]) => {
+          const [year, month] = key.split("-");
+          const date = new Date(Number(year), Number(month) - 1);
+          return {
+            label: date.toLocaleDateString("en-GB", {
+              month: "short",
+              year: "2-digit",
+            }),
+            cost: vals.cost,
+            claude: vals.claude,
+            gemini: vals.gemini,
+            openai: vals.openai,
+          };
+        });
+    }
+
+    // Daily view — short day labels
+    return data.daily_breakdown.map((d) => {
+      const date = new Date(d.date);
+      return {
+        label: date.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        }),
+        cost: d.cost_usd,
+        claude: d.claude ?? 0,
+        gemini: d.gemini ?? 0,
+        openai: d.openai ?? 0,
+      };
+    });
+  })();
 
   // Build platform rows for the table
   const platformRows = (data.by_platform ?? []).map((p) => ({
@@ -254,10 +293,24 @@ export function CostDashboard() {
                   />
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 11, fill: "rgba(255,255,255,0.3)" }}
+                    tick={{
+                      fontSize: chartData.length > 14 && !useMonthly ? 10 : 11,
+                      fill: "rgba(255,255,255,0.3)",
+                      angle: chartData.length > 14 && !useMonthly ? -45 : 0,
+                      textAnchor:
+                        chartData.length > 14 && !useMonthly ? "end" : "middle",
+                      dy: chartData.length > 14 && !useMonthly ? 5 : 0,
+                    }}
                     axisLine={false}
                     tickLine={false}
-                    interval={chartData.length > 30 ? Math.floor(chartData.length / 15) : 0}
+                    height={chartData.length > 14 && !useMonthly ? 50 : 30}
+                    interval={
+                      chartData.length <= 14
+                        ? 0
+                        : chartData.length <= 31
+                          ? 1
+                          : Math.floor(chartData.length / 12)
+                    }
                   />
                   <YAxis
                     tick={{ fontSize: 11, fill: "rgba(255,255,255,0.3)" }}
