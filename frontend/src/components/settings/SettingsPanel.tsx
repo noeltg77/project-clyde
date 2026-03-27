@@ -189,6 +189,10 @@ function SystemTab() {
   // Team export state
   const [showTeamExport, setShowTeamExport] = useState(false);
 
+  // Restart prompt state
+  const [showRestartPrompt, setShowRestartPrompt] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
   // Migration state
   const [showMigrateModal, setShowMigrateModal] = useState(false);
   const [promptFile, setPromptFile] = useState<File | null>(null);
@@ -309,6 +313,21 @@ function SystemTab() {
     setTimeout(() => setSaveResult(null), 8000);
   }
 
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      await fetch(`${API_URL}/api/system/restart`, { method: "POST" });
+      setShowRestartPrompt(false);
+      setSaveResult("Restarting backend...");
+      await pollBackendHealth();
+    } catch {
+      setSaveResult("Error: Could not trigger restart");
+      setTimeout(() => setSaveResult(null), 5000);
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   async function handleExport() {
     try {
       const res = await fetch(`${API_URL}/api/system/export`);
@@ -345,7 +364,7 @@ function SystemTab() {
         });
         const result = await res.json();
         if (result.success) {
-          alert("Import successful. Restart the backend to apply changes.");
+          setShowRestartPrompt(true);
         } else {
           alert(`Import failed: ${result.error || "Unknown error"}`);
         }
@@ -518,6 +537,52 @@ function SystemTab() {
           onClose={() => setShowTeamExport(false)}
         />
       </div>
+
+      {/* Restart Prompt Modal */}
+      <AnimatePresence>
+        {showRestartPrompt && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-[60]"
+              onClick={() => setShowRestartPrompt(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={springs.snappy}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] bg-bg-secondary border border-border rounded-[4px] z-[61] flex flex-col"
+            >
+              <div className="px-5 pt-5 pb-3 border-b border-border">
+                <h2 className="text-sm font-semibold text-text-primary">
+                  Restart Required
+                </h2>
+                <p className="text-[10px] text-text-secondary/60 mt-1">
+                  Import successful. The backend needs to restart to apply changes.
+                </p>
+              </div>
+              <div className="px-5 pb-5 pt-4 flex gap-2">
+                <button
+                  onClick={() => setShowRestartPrompt(false)}
+                  className="flex-1 py-2 bg-bg-tertiary border border-border text-text-primary text-sm font-semibold rounded-[2px] hover:border-accent-primary transition-colors"
+                >
+                  Later
+                </button>
+                <button
+                  onClick={handleRestart}
+                  disabled={restarting}
+                  className="flex-1 py-2 bg-accent-primary text-bg-primary text-sm font-semibold rounded-[2px] hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {restarting ? "Restarting..." : "Restart Now"}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Migrate Legacy System */}
       <div>

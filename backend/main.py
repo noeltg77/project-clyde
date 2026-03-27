@@ -1333,6 +1333,17 @@ async def _trigger_restart():
     Path(__file__).touch()
 
 
+@app.post("/api/system/restart")
+async def restart_backend():
+    """Trigger a backend restart via uvicorn --reload."""
+    try:
+        asyncio.create_task(_trigger_restart())
+        return {"success": True, "message": "Backend restart initiated"}
+    except Exception as e:
+        logger.error(f"[API] Restart failed: {e}")
+        return {"error": str(e)}
+
+
 # --- Agent Management REST (Phase 5D) ---
 
 
@@ -1455,6 +1466,17 @@ async def export_team(team_id: str, skills: str = ""):
 
         team = load_team_file(WORKING_DIR, team_id)
 
+        # Parse requested skill names
+        included_skills: set[str] = set()
+        if skills:
+            included_skills = {s.strip() for s in skills.split(",") if s.strip()}
+
+        # Strip excluded skills from each member's skills list
+        for member in team.get("members", []):
+            member["skills"] = [
+                s for s in member.get("skills", []) if s in included_skills
+            ]
+
         # Collect prompts and memory for each member
         prompts = {}
         memory = {}
@@ -1473,18 +1495,26 @@ async def export_team(team_id: str, skills: str = ""):
                 with open(memory_path, "r") as f:
                     memory[memory_file] = f.read()
 
-        # Collect requested skills
+        # Collect requested skill files — match by exact name or case-insensitive
         skill_files = {}
-        if skills:
-            skill_names = [s.strip() for s in skills.split(",") if s.strip()]
+        if included_skills:
             skills_dir = os.path.join(WORKING_DIR, "skills")
             if os.path.isdir(skills_dir):
+                # Build a lookup: lowercase skill name -> actual filename
+                available = {}
                 for fname in os.listdir(skills_dir):
                     if fname.endswith(".md"):
-                        skill_name = fname[:-3]  # strip .md
-                        if skill_name in skill_names:
-                            with open(os.path.join(skills_dir, fname), "r") as f:
-                                skill_files[fname] = f.read()
+                        available[fname[:-3].lower()] = fname
+                for skill_name in included_skills:
+                    # Try exact match first, then case-insensitive
+                    exact_path = os.path.join(skills_dir, f"{skill_name}.md")
+                    if os.path.exists(exact_path):
+                        with open(exact_path, "r") as f:
+                            skill_files[f"{skill_name}.md"] = f.read()
+                    elif skill_name.lower() in available:
+                        actual_fname = available[skill_name.lower()]
+                        with open(os.path.join(skills_dir, actual_fname), "r") as f:
+                            skill_files[actual_fname] = f.read()
 
         return {
             "clyde_package_version": "1.0",
