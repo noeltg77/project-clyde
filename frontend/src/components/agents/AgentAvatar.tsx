@@ -31,7 +31,7 @@ export function AgentAvatar({
 }: AgentAvatarProps) {
   return (
     <div
-      className={`relative rounded-full overflow-hidden border-2 ${borderColors[modelTier]} flex-shrink-0`}
+      className={`relative rounded-full overflow-hidden border-2 ${borderColors[modelTier] || "border-[#8B5CF6]"} flex-shrink-0`}
       style={{ width: size, height: size }}
     >
       {/* Initials fallback — rendered behind the image, visible when image fails */}

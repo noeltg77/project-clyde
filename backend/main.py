@@ -1225,8 +1225,28 @@ async def update_registry_settings(body: dict):
             provider = body["agent_provider"]
             if provider in ("anthropic", "openrouter"):
                 updates["agent_provider"] = provider
+                # Sync orchestrator model in registry to reflect the active provider
+                try:
+                    from services.registry import update_agent
+                    if provider == "openrouter":
+                        or_model = body.get("openrouter_model") or load_settings(WORKING_DIR).get("openrouter_model", "anthropic/claude-sonnet-4")
+                        update_agent(WORKING_DIR, "clyde-001", {"model": or_model, "platform": "openrouter"})
+                    else:
+                        claude_model = load_settings(WORKING_DIR).get("clyde_model", "opus")
+                        update_agent(WORKING_DIR, "clyde-001", {"model": claude_model, "platform": "claude"})
+                except Exception as e:
+                    logger.warning(f"[API] Failed to sync orchestrator provider: {e}")
         if "openrouter_model" in body:
-            updates["openrouter_model"] = str(body["openrouter_model"]).strip()
+            or_model = str(body["openrouter_model"]).strip()
+            updates["openrouter_model"] = or_model
+            # If currently using OpenRouter, also update the orchestrator in registry
+            current_settings = load_settings(WORKING_DIR)
+            if current_settings.get("agent_provider") == "openrouter":
+                try:
+                    from services.registry import update_agent
+                    update_agent(WORKING_DIR, "clyde-001", {"model": or_model})
+                except Exception as e:
+                    logger.warning(f"[API] Failed to sync orchestrator model: {e}")
         if "openrouter_subagent_model" in body:
             updates["openrouter_subagent_model"] = str(body["openrouter_subagent_model"]).strip()
 

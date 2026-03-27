@@ -162,9 +162,7 @@ function AgentNode({
     "gpt-5.4-mini": "border-[#10A37F]",
     "gpt-5.4-nano": "border-[#10A37F]",
   };
-  const borderColor = isOrchestrator
-    ? "border-agent-opus"
-    : modelBorderMap[agent.model] || "border-agent-opus";
+  const borderColor = modelBorderMap[agent.model] || "border-agent-opus";
 
   const avatarSize = 72;
 
