@@ -357,16 +357,36 @@ function SystemTab() {
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-        const res = await fetch(`${API_URL}/api/system/import`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        const result = await res.json();
-        if (result.success) {
-          setShowRestartPrompt(true);
+
+        // Detect .clyde team package vs full system export
+        if (data.clyde_package_version && data.team) {
+          const res = await fetch(`${API_URL}/api/teams/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          const result = await res.json();
+          if (result.success) {
+            alert(
+              `Team "${result.team_name}" imported with ${result.agents_imported} agent(s). Refreshing...`
+            );
+            window.location.reload();
+          } else {
+            alert(`Import failed: ${result.error || "Unknown error"}`);
+          }
         } else {
-          alert(`Import failed: ${result.error || "Unknown error"}`);
+          // Full system import
+          const res = await fetch(`${API_URL}/api/system/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          const result = await res.json();
+          if (result.success) {
+            setShowRestartPrompt(true);
+          } else {
+            alert(`Import failed: ${result.error || "Unknown error"}`);
+          }
         }
       } catch {
         alert("Failed to parse import file");

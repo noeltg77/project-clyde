@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
 import shutil
+import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -1528,6 +1529,126 @@ async def export_team(team_id: str, skills: str = ""):
         return {"error": f"Team not found: {team_id}"}
     except Exception as e:
         logger.error(f"[API] Team export failed: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/teams/import")
+async def import_team(body: dict):
+    """Import a .clyde team package — creates team, agents, prompts, memory, and skills."""
+    try:
+        from services.registry import (
+            create_team,
+            load_teams_index,
+            _team_file_path,
+            _write_json_atomic,
+            _invalidate_cache,
+            _touch_index_timestamp,
+            _teams_index_path,
+        )
+
+        pkg_team = body.get("team")
+        if not pkg_team:
+            return {"error": "No team data in package"}
+
+        team_name = pkg_team.get("name", "Imported Team")
+
+        # Create the team (gets a fresh ID)
+        new_team = create_team(
+            WORKING_DIR,
+            name=team_name,
+            color=pkg_team.get("color"),
+            icon=pkg_team.get("icon"),
+        )
+        new_team_id = new_team["id"]
+
+        # Build members with fresh IDs
+        members = []
+        for member in pkg_team.get("members", []):
+            agent_id = f"agt-{uuid.uuid4().hex[:12]}"
+            name_lower = member.get("name", "agent").lower().replace(" ", "-")
+
+            prompt_filename = f"{name_lower}-system.md"
+            memory_filename = f"{name_lower}-memory.md"
+
+            agent_entry = {
+                "id": agent_id,
+                "name": member.get("name", "Agent"),
+                "role": member.get("role", ""),
+                "model": member.get("model", "sonnet"),
+                "avatar": member.get("avatar", "/avatars/male/m1.jpeg"),
+                "system_prompt_path": f"/working/prompts/{prompt_filename}",
+                "memory_path": f"/working/memory/{memory_filename}",
+                "working_dir": f"/working/agents/{name_lower}",
+                "status": "active",
+                "tools": member.get("tools", ["Read", "Write", "Edit", "Glob", "Grep"]),
+                "skills": member.get("skills", []),
+                "handles": member.get("handles", []),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            members.append(agent_entry)
+
+            # Create agent working directory
+            agent_work_dir = os.path.join(WORKING_DIR, "agents", name_lower)
+            os.makedirs(agent_work_dir, exist_ok=True)
+
+        # Write members into the team file
+        team_file_path = _team_file_path(WORKING_DIR, new_team_id)
+        _invalidate_cache(team_file_path)
+        with open(team_file_path, "r") as f:
+            team_data = json.load(f)
+        team_data["members"] = members
+        team_data["workflows"] = pkg_team.get("workflows", [])
+        team_data["delegation_notes"] = pkg_team.get("delegation_notes", "")
+        _write_json_atomic(team_file_path, team_data)
+
+        # Write prompt files
+        prompts_dir = os.path.join(WORKING_DIR, "prompts")
+        os.makedirs(prompts_dir, exist_ok=True)
+        for fname, content in body.get("prompts", {}).items():
+            with open(os.path.join(prompts_dir, fname), "w") as f:
+                f.write(content)
+
+        # Write memory files
+        memory_dir = os.path.join(WORKING_DIR, "memory")
+        os.makedirs(memory_dir, exist_ok=True)
+        for fname, content in body.get("memory", {}).items():
+            with open(os.path.join(memory_dir, fname), "w") as f:
+                f.write(content)
+
+        # Write skill files
+        skills_dir = os.path.join(WORKING_DIR, "skills")
+        os.makedirs(skills_dir, exist_ok=True)
+        for fname, content in body.get("skills", {}).items():
+            with open(os.path.join(skills_dir, fname), "w") as f:
+                f.write(content)
+
+        # Ensure any members without prompt/memory files get defaults
+        for member in members:
+            name_lower = member["name"].lower().replace(" ", "-")
+            prompt_path = os.path.join(prompts_dir, f"{name_lower}-system.md")
+            if not os.path.exists(prompt_path):
+                with open(prompt_path, "w") as f:
+                    f.write(f"You are {member['name']}, a {member['role']}.\n")
+            memory_path = os.path.join(memory_dir, f"{name_lower}-memory.md")
+            if not os.path.exists(memory_path):
+                with open(memory_path, "w") as f:
+                    f.write(f"# {member['name']} — Memory\n\n_Memory file initialised {datetime.now(timezone.utc).strftime('%Y-%m-%d')}_\n")
+
+        _touch_index_timestamp(WORKING_DIR)
+
+        logger.info(f"[API] Team imported: {team_name} ({new_team_id}) with {len(members)} agents")
+        return {
+            "success": True,
+            "team_id": new_team_id,
+            "team_name": team_name,
+            "agents_imported": len(members),
+            "prompts_written": len(body.get("prompts", {})),
+            "skills_written": len(body.get("skills", {})),
+        }
+    except ValueError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"[API] Team import failed: {e}")
         return {"error": str(e)}
 
 
