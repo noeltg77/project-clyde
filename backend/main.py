@@ -1221,6 +1221,14 @@ async def update_registry_settings(body: dict):
                     logger.info("[API] Sleep prevention stopped via settings toggle")
         if "debug_mode_enabled" in body:
             updates["debug_mode_enabled"] = bool(body["debug_mode_enabled"])
+        if "agent_provider" in body:
+            provider = body["agent_provider"]
+            if provider in ("anthropic", "openrouter"):
+                updates["agent_provider"] = provider
+        if "openrouter_model" in body:
+            updates["openrouter_model"] = str(body["openrouter_model"]).strip()
+        if "openrouter_subagent_model" in body:
+            updates["openrouter_subagent_model"] = str(body["openrouter_subagent_model"]).strip()
 
         if updates:
             update_settings(WORKING_DIR, updates)
