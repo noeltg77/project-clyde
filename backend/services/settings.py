@@ -28,6 +28,9 @@ DEFAULTS: dict[str, Any] = {
     "prompt_caching_enabled": True,
     "prevent_sleep_enabled": False,
     "debug_mode_enabled": False,
+    "agent_provider": "anthropic",  # "anthropic" | "openrouter"
+    "openrouter_model": "anthropic/claude-sonnet-4",
+    "openrouter_subagent_model": "anthropic/claude-haiku-4",
 }
 
 # Maps model tier names to Claude API model IDs
@@ -69,6 +72,18 @@ OPENAI_PRICING: dict[str, tuple[float, float]] = {
     "gpt-5.4-mini": (0.75, 4.50),
     "gpt-5.4-nano": (0.20, 1.25),
 }
+
+# Popular OpenRouter models for the frontend dropdown
+OPENROUTER_POPULAR_MODELS: list[str] = [
+    "anthropic/claude-opus-4",
+    "anthropic/claude-sonnet-4",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "google/gemini-2.5-pro",
+    "google/gemini-2.5-flash",
+    "meta-llama/llama-4-maverick",
+    "deepseek/deepseek-r1",
+]
 
 # In-memory cache (TTL-based, invalidated on save)
 _settings_cache: dict[str, tuple[float, dict[str, Any]]] = {}

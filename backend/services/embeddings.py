@@ -10,7 +10,21 @@ EMBEDDING_DIMENSIONS = 1536
 def get_openai_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            _client = OpenAI(api_key=api_key)
+        else:
+            # Fall back to OpenRouter for embeddings when no direct OpenAI key
+            openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+            if openrouter_key:
+                _client = OpenAI(
+                    api_key=openrouter_key,
+                    base_url="https://openrouter.ai/api/v1",
+                )
+            else:
+                raise RuntimeError(
+                    "No OPENAI_API_KEY or OPENROUTER_API_KEY found for embeddings"
+                )
     return _client
 
 

@@ -255,15 +255,31 @@ function checkPrerequisites() {
 async function runSetupWizard() {
   console.log(C.bold(C.green('  FIRST-TIME SETUP\n')));
 
+  // Agent provider selection
+  console.log(C.bold(C.orange('  Agent Provider')));
+  console.log('');
+  console.log(C.gray('  1. Anthropic  — Claude Agent SDK (default)'));
+  console.log(C.gray('  2. OpenRouter — LangChain Deep Agents (300+ models)'));
+  console.log(C.gray('  (This can be changed later in Settings)'));
+  console.log('');
+  const providerChoice = await prompt('Choose provider (1 or 2):');
+  const useOpenRouter = providerChoice.trim() === '2';
+  console.log('');
+
   // Cost-saving mode — ask first
   console.log(C.bold(C.orange('  Model Configuration')));
   console.log('');
-  console.log(C.gray('  Default: Clyde uses Opus, subagents use Sonnet'));
-  console.log(C.gray('  Cost-saving: Clyde uses Sonnet, subagents use Haiku'));
+  if (useOpenRouter) {
+    console.log(C.gray('  Default model: anthropic/claude-sonnet-4'));
+    console.log(C.gray('  You can change the model anytime in Settings'));
+  } else {
+    console.log(C.gray('  Default: Clyde uses Opus, subagents use Sonnet'));
+    console.log(C.gray('  Cost-saving: Clyde uses Sonnet, subagents use Haiku'));
+  }
   console.log(C.gray('  (This can be changed later in Settings)'));
   console.log('');
-  const costSaving = await promptYesNo('Enable cost-saving mode?');
-  console.log('');
+  const costSaving = useOpenRouter ? false : await promptYesNo('Enable cost-saving mode?');
+  if (!useOpenRouter) console.log('');
 
   console.log(C.gray('  You\'ll need your Supabase dashboard and API keys ready.'));
   console.log(C.gray('  Credentials are stored locally in .env.local and never shared.\n'));
@@ -299,39 +315,73 @@ async function runSetupWizard() {
   const dbPassword = await promptSecret('Database Password:');
 
   console.log('');
-  console.log(C.bold(C.orange('  API Keys')) + C.gray('  (console.anthropic.com | platform.openai.com)'));
-  console.log('');
 
-  const anthropicKey = await promptWithValidation(
-    'Anthropic API Key:',
-    (v) => v.startsWith('sk-ant-') && v.length > 20,
-    'Key should start with "sk-ant-"',
-    { secret: true }
-  );
+  let anthropicKey = '';
+  let openaiKey = '';
+  let openrouterKey = '';
 
-  const openaiKey = await promptWithValidation(
-    'OpenAI API Key:',
-    (v) => v.startsWith('sk-') && v.length > 20,
-    'Key should start with "sk-"',
-    { secret: true }
-  );
+  if (useOpenRouter) {
+    console.log(C.bold(C.orange('  API Keys')) + C.gray('  (openrouter.ai/keys | platform.openai.com)'));
+    console.log('');
+
+    openrouterKey = await promptWithValidation(
+      'OpenRouter API Key:',
+      (v) => v.startsWith('sk-or-') && v.length > 20,
+      'Key should start with "sk-or-"',
+      { secret: true }
+    );
+
+    console.log('');
+    console.log(C.gray('  OpenAI key is used for embeddings. You can skip this'));
+    console.log(C.gray('  if you want embeddings to go through OpenRouter instead.'));
+    console.log('');
+    const wantsOpenai = await promptYesNo('Add a separate OpenAI API Key for embeddings?');
+    if (wantsOpenai) {
+      openaiKey = await promptWithValidation(
+        'OpenAI API Key:',
+        (v) => v.startsWith('sk-') && v.length > 20,
+        'Key should start with "sk-"',
+        { secret: true }
+      );
+    }
+  } else {
+    console.log(C.bold(C.orange('  API Keys')) + C.gray('  (console.anthropic.com | platform.openai.com)'));
+    console.log('');
+
+    anthropicKey = await promptWithValidation(
+      'Anthropic API Key:',
+      (v) => v.startsWith('sk-ant-') && v.length > 20,
+      'Key should start with "sk-ant-"',
+      { secret: true }
+    );
+
+    openaiKey = await promptWithValidation(
+      'OpenAI API Key:',
+      (v) => v.startsWith('sk-') && v.length > 20,
+      'Key should start with "sk-"',
+      { secret: true }
+    );
+  }
 
   // Extract project ref
   const refMatch = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/);
   const projectRef = refMatch[1];
 
   const config = {
-    ANTHROPIC_API_KEY: anthropicKey,
     NEXT_PUBLIC_SUPABASE_URL: supabaseUrl.replace(/\/$/, ''),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
     SUPABASE_SERVICE_ROLE_KEY: supabaseServiceKey,
-    OPENAI_API_KEY: openaiKey,
     BACKEND_URL: 'http://localhost:8000',
     NEXT_PUBLIC_BACKEND_WS_URL: 'ws://localhost:8000',
     WORKING_DIR: WORKING_DIR,
   };
 
-  return { config, projectRef, dbPassword, costSaving };
+  // Add provider-specific keys
+  if (anthropicKey) config.ANTHROPIC_API_KEY = anthropicKey;
+  if (openaiKey) config.OPENAI_API_KEY = openaiKey;
+  if (openrouterKey) config.OPENROUTER_API_KEY = openrouterKey;
+
+  return { config, projectRef, dbPassword, costSaving, useOpenRouter };
 }
 
 // ─── Schema Deployment ──────────────────────────────────────────────
@@ -622,7 +672,7 @@ async function main() {
   if (isFirstRun()) {
     checkPrerequisites();
 
-    const { config, projectRef, dbPassword, costSaving } = await runSetupWizard();
+    const { config, projectRef, dbPassword, costSaving, useOpenRouter } = await runSetupWizard();
 
     // Write .env.local
     console.log('');
@@ -638,6 +688,22 @@ async function main() {
 
     // Ensure working directory
     ensureWorkingDir();
+
+    // Apply provider selection to settings.json
+    if (useOpenRouter) {
+      try {
+        const settingsPath = path.join(WORKING_DIR, 'settings.json');
+        let settings = {};
+        if (fs.existsSync(settingsPath)) {
+          try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { /* use empty */ }
+        }
+        settings.agent_provider = 'openrouter';
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        console.log(`  ${C.check} ${C.white('Agent provider set to OpenRouter')}`);
+      } catch (err) {
+        console.log(C.yellow(`  Warning: Could not write provider setting: ${err.message}`));
+      }
+    }
 
     // Apply cost-saving mode if selected
     if (costSaving) {

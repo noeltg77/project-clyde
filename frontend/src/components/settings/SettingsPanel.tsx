@@ -17,6 +17,9 @@ type Tab = "system" | "prompts" | "controls";
 
 type RegistrySettings = {
   clyde_model: "opus" | "sonnet" | "haiku";
+  agent_provider: "anthropic" | "openrouter";
+  openrouter_model: string;
+  openrouter_subagent_model: string;
   self_edit_enabled: boolean;
   concurrency_cap: number;
   max_team_size: number;
@@ -131,6 +134,10 @@ const ENV_VAR_GROUPS = [
   {
     service: "OpenAI",
     vars: [{ key: "OPENAI_API_KEY", label: "API Key" }],
+  },
+  {
+    service: "OpenRouter",
+    vars: [{ key: "OPENROUTER_API_KEY", label: "API Key" }],
   },
   {
     service: "Supabase",
@@ -1122,58 +1129,180 @@ function ControlsTab() {
     );
   }
 
+  const provider = settings.agent_provider || "anthropic";
+  const [openrouterModels, setOpenrouterModels] = useState<string[]>([]);
+  const [customModel, setCustomModel] = useState("");
+
+  useEffect(() => {
+    if (provider === "openrouter") {
+      fetch(`${API_URL}/api/openrouter/models`)
+        .then((r) => r.json())
+        .then((d) => setOpenrouterModels(d.models || []))
+        .catch(() => {});
+    }
+  }, [provider]);
+
   return (
     <div className="space-y-6">
-      {/* Clyde Model Selector */}
+      {/* Agent Provider Selector */}
       <div>
         <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
-          Clyde Model
+          Agent Provider
         </h3>
-        <div className="space-y-1.5">
-          {MODEL_OPTIONS.map((opt) => {
-            const isSelected = (settings.clyde_model || "opus") === opt.value;
+        <div className="flex gap-2">
+          {([
+            { value: "anthropic" as const, label: "Anthropic", desc: "Claude Agent SDK" },
+            { value: "openrouter" as const, label: "OpenRouter", desc: "LangChain Deep Agents" },
+          ] as const).map((opt) => {
+            const isSelected = provider === opt.value;
             return (
               <button
                 key={opt.value}
-                onClick={() => updateSetting("clyde_model", opt.value)}
-                className={`w-full flex items-center gap-3 p-3 rounded-[2px] border-2 transition-all text-left ${
+                onClick={() => updateSetting("agent_provider", opt.value)}
+                className={`flex-1 p-3 rounded-[2px] border-2 transition-all text-left ${
                   isSelected
-                    ? "bg-bg-tertiary border-current"
+                    ? "bg-bg-tertiary border-accent-primary"
                     : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
                 }`}
-                style={isSelected ? { borderColor: opt.color } : undefined}
               >
-                <div
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ backgroundColor: opt.color }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-text-primary">
-                    {opt.label}
-                  </p>
-                  <p className="text-[10px] text-text-secondary/60 mt-0.5">
-                    {opt.desc}
-                  </p>
-                </div>
-                {isSelected && (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ color: opt.color }}
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
+                <p className="text-sm font-semibold text-text-primary">
+                  {opt.label}
+                </p>
+                <p className="text-[10px] text-text-secondary/60 mt-0.5">
+                  {opt.desc}
+                </p>
               </button>
             );
           })}
         </div>
+        <p className="text-[10px] text-text-secondary/50 mt-1.5">
+          Changes apply to the next chat session
+        </p>
+      </div>
+
+      {/* Model Selector — conditional on provider */}
+      <div>
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+          {provider === "openrouter" ? "OpenRouter Model" : "Clyde Model"}
+        </h3>
+
+        {provider === "anthropic" ? (
+          /* Anthropic: Opus / Sonnet / Haiku buttons */
+          <div className="space-y-1.5">
+            {MODEL_OPTIONS.map((opt) => {
+              const isSelected = (settings.clyde_model || "opus") === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => updateSetting("clyde_model", opt.value)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-[2px] border-2 transition-all text-left ${
+                    isSelected
+                      ? "bg-bg-tertiary border-current"
+                      : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
+                  }`}
+                  style={isSelected ? { borderColor: opt.color } : undefined}
+                >
+                  <div
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: opt.color }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-text-primary">
+                      {opt.label}
+                    </p>
+                    <p className="text-[10px] text-text-secondary/60 mt-0.5">
+                      {opt.desc}
+                    </p>
+                  </div>
+                  {isSelected && (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ color: opt.color }}
+                    >
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* OpenRouter: model dropdown + custom input */
+          <div className="space-y-2">
+            <div className="space-y-1.5">
+              {openrouterModels.map((model) => {
+                const isSelected = (settings.openrouter_model || "anthropic/claude-sonnet-4") === model;
+                const shortName = model.split("/").pop() || model;
+                const provider = model.split("/")[0] || "";
+                return (
+                  <button
+                    key={model}
+                    onClick={() => updateSetting("openrouter_model", model)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-[2px] border-2 transition-all text-left ${
+                      isSelected
+                        ? "bg-bg-tertiary border-accent-primary"
+                        : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-text-primary">
+                        {shortName}
+                      </p>
+                      <p className="text-[10px] text-text-secondary/60 mt-0.5">
+                        {provider}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-accent-primary"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Custom model input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                placeholder="Custom model slug (e.g. mistralai/mistral-large)"
+                className="flex-1 px-3 py-2 text-xs bg-bg-tertiary border border-border rounded-[2px] text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:border-accent-primary"
+              />
+              <button
+                onClick={() => {
+                  if (customModel.trim()) {
+                    updateSetting("openrouter_model", customModel.trim());
+                    setCustomModel("");
+                  }
+                }}
+                disabled={!customModel.trim()}
+                className="px-3 py-2 text-xs bg-accent-primary text-bg-primary rounded-[2px] font-semibold disabled:opacity-40 hover:opacity-90 transition-opacity"
+              >
+                Set
+              </button>
+            </div>
+          </div>
+        )}
+
         <p className="text-[10px] text-text-secondary/50 mt-1.5">
           Changes apply to the next chat session
         </p>

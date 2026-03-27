@@ -1230,6 +1230,13 @@ async def update_registry_settings(body: dict):
         return {"error": str(e)}
 
 
+@app.get("/api/openrouter/models")
+async def get_openrouter_models():
+    """Return the list of popular OpenRouter models for the frontend dropdown."""
+    from services.settings import OPENROUTER_POPULAR_MODELS
+    return {"models": OPENROUTER_POPULAR_MODELS}
+
+
 # --- Environment Variable Management ---
 
 # Only these vars can be read/written via the API
@@ -1237,6 +1244,7 @@ _ENV_WHITELIST = {
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
@@ -2085,7 +2093,16 @@ async def chat_websocket(ws: WebSocket):
     # Check for session_id query param to resume an existing session
     resume_session_id = ws.query_params.get("session_id")
 
-    manager = ClydeChatManager(working_dir=WORKING_DIR, ws=ws)
+    # Select chat manager based on provider setting
+    _ws_settings = load_settings(WORKING_DIR)
+    _agent_provider = _ws_settings.get("agent_provider", "anthropic")
+    if _agent_provider == "openrouter":
+        from agents.deep_agent import DeepAgentChatManager
+        manager = DeepAgentChatManager(working_dir=WORKING_DIR, ws=ws)
+        logger.info("[WS] Using DeepAgentChatManager (OpenRouter)")
+    else:
+        manager = ClydeChatManager(working_dir=WORKING_DIR, ws=ws)
+        logger.info("[WS] Using ClydeChatManager (Anthropic)")
     session_id: str | None = None
     is_first_user_message = True
 
