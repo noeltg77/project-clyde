@@ -188,17 +188,22 @@ export function useAgentWebSocket(
       try {
         const parsed = JSON.parse(event.data) as WebSocketMessage;
 
+        // Learn sessionId from session_created for ALL connections (active + background).
+        // This is critical: deferred sessions (new chats) don't have a sessionId until
+        // the backend creates one on the first user message. Without this, the
+        // sessionConnMap never learns about the active connection's session, so
+        // re-promotion fails when the user switches back.
+        if (parsed.type === "session_created" && parsed.data?.session_id) {
+          const newSid = parsed.data.session_id as string;
+          connMetaRef.current.set(connId, newSid);
+          sessionConnMapRef.current.set(newSid, connId);
+        }
+
         if (connId === activeConnIdRef.current) {
           // Active connection → full message handling
           onMessageRef.current(parsed);
         } else {
           // Background connection → lightweight handling + buffering
-          // Learn sessionId from session_created if we don't have it yet
-          if (parsed.type === "session_created" && parsed.data?.session_id) {
-            const newSid = parsed.data.session_id as string;
-            connMetaRef.current.set(connId, newSid);
-            sessionConnMapRef.current.set(newSid, connId);
-          }
           const sid = connMetaRef.current.get(connId) || null;
 
           // Buffer the message for replay when user switches back

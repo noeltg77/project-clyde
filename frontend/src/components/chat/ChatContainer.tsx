@@ -1077,10 +1077,15 @@ export function ChatContainer() {
         connect(targetId);
         setLoadingSession(false);
 
-        // Replay buffered messages that arrived while this session was in the background
+        // Replay buffered messages that arrived while this session was in the background.
+        // Skip init/session_history/activity_history — those are connection lifecycle
+        // messages that would overwrite the cached state we already restored.
+        const skipTypes = new Set(["init", "session_history", "activity_history", "session_created"]);
         const buffered = drainBuffer(targetId);
         for (const msg of buffered) {
-          handleMessage(msg);
+          if (!skipTypes.has(msg.type)) {
+            handleMessage(msg);
+          }
         }
       } else {
         // No live connection — create a new one (backend will send session_history)
