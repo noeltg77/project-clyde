@@ -1362,6 +1362,22 @@ async def update_agent_rest(registry_id: str, body: dict):
         return {"error": str(e)}
 
 
+@app.delete("/api/agents/{registry_id}")
+async def delete_agent_rest(registry_id: str):
+    """Permanently delete an agent and all their files."""
+    try:
+        from services.registry import delete_agent
+
+        deleted = delete_agent(WORKING_DIR, registry_id)
+        logger.info(f"[API] Permanently deleted agent: {deleted.get('name')} ({registry_id})")
+        return {"success": True, "deleted": deleted.get("name")}
+    except ValueError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"[API] Delete agent failed: {e}")
+        return {"error": str(e)}
+
+
 # --- Team Management REST (Phase 8) ---
 
 

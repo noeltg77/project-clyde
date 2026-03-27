@@ -77,6 +77,7 @@ export type AgentActions = {
   setAgents: (agents: Agent[]) => void;
   addAgent: (agent: Agent) => void;
   updateAgent: (registryId: string, partial: Partial<Agent>) => void;
+  removeAgent: (registryId: string) => void;
   setTeams: (teams: Team[]) => void;
   updateTeam: (teamId: string, partial: Partial<Team>) => void;
   addActivityEvent: (event: ActivityEvent) => void;
@@ -115,6 +116,11 @@ export const createAgentStore = (initState?: Partial<AgentState>) =>
         agents: state.agents.map((a) =>
           a.registryId === registryId ? { ...a, ...partial } : a
         ),
+      })),
+
+    removeAgent: (registryId) =>
+      set((state) => ({
+        agents: state.agents.filter((a) => a.registryId !== registryId),
       })),
 
     setTeams: (teams) => set({ teams }),

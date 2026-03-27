@@ -668,12 +668,15 @@ function AgentDetail({
   agent,
   onClose,
   onStatusChange,
+  onDelete,
 }: {
   agent: Agent;
   onClose: () => void;
   onStatusChange: (registryId: string, newStatus: string) => void;
+  onDelete: (registryId: string) => void;
 }) {
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [agentIntegrations, setAgentIntegrations] = useState<AgentIntegration[]>([]);
   const setSettingsOpen = useSettingsStore((s) => s.setSettingsOpen);
 
@@ -844,6 +847,34 @@ function AgentDetail({
               </button>
             </div>
           )}
+          {agent.status === "archived" && !confirmDelete && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-error/15 text-error rounded-[2px] hover:bg-error/25 transition-colors"
+            >
+              Delete
+            </button>
+          )}
+          {confirmDelete && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-error">Permanently delete?</span>
+              <button
+                onClick={() => {
+                  onDelete(agent.registryId);
+                  setConfirmDelete(false);
+                }}
+                className="px-2.5 py-1 text-[10px] font-semibold bg-error text-white rounded-[2px] hover:brightness-110 transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-2.5 py-1 text-[10px] font-semibold bg-bg-secondary text-text-secondary rounded-[2px] hover:text-text-primary transition-colors"
+              >
+                No
+              </button>
+            </div>
+          )}
           <button
             onClick={() => setSettingsOpen(true)}
             className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-bg-secondary text-text-secondary border border-border rounded-[2px] hover:text-accent-primary hover:border-accent-primary/30 transition-colors ml-auto"
@@ -864,6 +895,7 @@ export function OrgChart() {
   const setAgents = useAgentStore((s) => s.setAgents);
   const setTeams = useAgentStore((s) => s.setTeams);
   const updateAgent = useAgentStore((s) => s.updateAgent);
+  const removeAgent = useAgentStore((s) => s.removeAgent);
   const updateTeamStore = useAgentStore((s) => s.updateTeam);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -956,6 +988,21 @@ export function OrgChart() {
       }
     } catch (err) {
       console.error("Failed to update agent status:", err);
+    }
+  };
+
+  // Handle permanent agent deletion via REST
+  const handleDelete = async (registryId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/agents/${registryId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        removeAgent(registryId);
+        setSelectedAgent(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete agent:", err);
     }
   };
 
@@ -1198,6 +1245,7 @@ export function OrgChart() {
                     agent={selectedAgent}
                     onClose={() => setSelectedAgent(null)}
                     onStatusChange={handleStatusChange}
+                    onDelete={handleDelete}
                   />
                 </div>
               )}
@@ -1359,6 +1407,7 @@ export function OrgChart() {
                         agent={selectedAgent}
                         onClose={() => setSelectedAgent(null)}
                         onStatusChange={handleStatusChange}
+                        onDelete={handleDelete}
                       />
                     </div>
                   )}
@@ -1487,6 +1536,7 @@ export function OrgChart() {
                         agent={selectedAgent}
                         onClose={() => setSelectedAgent(null)}
                         onStatusChange={handleStatusChange}
+                        onDelete={handleDelete}
                       />
                     </div>
                   )}
