@@ -8,6 +8,7 @@ import type { Agent } from "@/stores/agent-store";
 import { springs } from "@/lib/design-tokens";
 import { PromptEditor } from "./PromptEditor";
 import { PromptHistoryViewer } from "./PromptHistoryViewer";
+import { TeamExportModal } from "./TeamExportModal";
 
 const API_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -184,6 +185,9 @@ function SystemTab() {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState(false);
+
+  // Team export state
+  const [showTeamExport, setShowTeamExport] = useState(false);
 
   // Migration state
   const [showMigrateModal, setShowMigrateModal] = useState(false);
@@ -500,6 +504,19 @@ function SystemTab() {
         <p className="text-[10px] text-text-secondary/50 mt-1.5">
           Export saves registry, prompts, skills, memory, schedules, and triggers.
         </p>
+        <button
+          onClick={() => setShowTeamExport(true)}
+          className="w-full mt-2 py-2 bg-bg-tertiary border border-border text-text-primary text-sm font-semibold rounded-[2px] hover:border-accent-primary transition-colors"
+        >
+          Export Team
+        </button>
+        <p className="text-[10px] text-text-secondary/50 mt-1">
+          Export a single team as a .clyde package for sharing or marketplace.
+        </p>
+        <TeamExportModal
+          isOpen={showTeamExport}
+          onClose={() => setShowTeamExport(false)}
+        />
       </div>
 
       {/* Migrate Legacy System */}
