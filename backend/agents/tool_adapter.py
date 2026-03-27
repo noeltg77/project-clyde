@@ -62,7 +62,20 @@ def _build_pydantic_model(tool_name: str, schema: dict[str, type]) -> type[BaseM
 
     fields = {}
     for param_name, param_type in schema.items():
-        field_type, default = _TYPE_MAP.get(param_type, (Optional[str], None))
+        # param_type can be a class (str, int, dict) or sometimes a non-hashable
+        # value. Use identity checks for safety.
+        if param_type is str:
+            field_type, default = Optional[str], None
+        elif param_type is int:
+            field_type, default = Optional[int], None
+        elif param_type is float:
+            field_type, default = Optional[float], None
+        elif param_type is bool:
+            field_type, default = Optional[bool], None
+        else:
+            # dict, list, or anything else — accept as Optional[str]
+            # The tools parse their own args internally anyway
+            field_type, default = Optional[str], None
         fields[param_name] = (field_type, Field(default=default))
 
     return create_model(f"{tool_name}_Args", **fields)
