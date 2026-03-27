@@ -1072,9 +1072,13 @@ function ProactiveSection({
 function ControlsTab() {
   const [settings, setSettings] = useState<RegistrySettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [openrouterModels, setOpenrouterModels] = useState<string[]>([]);
+  const [customModel, setCustomModel] = useState("");
   const orchestrator = useAgentStore((s) => s.orchestrator);
   const setOrchestrator = useAgentStore((s) => s.setOrchestrator);
   const setDebugEnabled = useSettingsStore((s) => s.setDebugEnabled);
+
+  const provider = settings?.agent_provider || "anthropic";
 
   useEffect(() => {
     async function load() {
@@ -1082,7 +1086,6 @@ function ControlsTab() {
         const res = await fetch(`${API_URL}/api/registry/settings`);
         const data = await res.json();
         setSettings(data);
-        // Sync debug setting to global store so MessageBubble can read it
         setDebugEnabled(!!data.debug_mode_enabled);
       } catch {
         // ignore
@@ -1090,6 +1093,15 @@ function ControlsTab() {
     }
     load();
   }, [setDebugEnabled]);
+
+  useEffect(() => {
+    if (provider === "openrouter") {
+      fetch(`${API_URL}/api/openrouter/models`)
+        .then((r) => r.json())
+        .then((d) => setOpenrouterModels(d.models || []))
+        .catch(() => {});
+    }
+  }, [provider]);
 
   async function updateSetting(key: string, value: any) {
     if (!settings) return;
@@ -1128,19 +1140,6 @@ function ControlsTab() {
       </div>
     );
   }
-
-  const provider = settings.agent_provider || "anthropic";
-  const [openrouterModels, setOpenrouterModels] = useState<string[]>([]);
-  const [customModel, setCustomModel] = useState("");
-
-  useEffect(() => {
-    if (provider === "openrouter") {
-      fetch(`${API_URL}/api/openrouter/models`)
-        .then((r) => r.json())
-        .then((d) => setOpenrouterModels(d.models || []))
-        .catch(() => {});
-    }
-  }, [provider]);
 
   return (
     <div className="space-y-6">
