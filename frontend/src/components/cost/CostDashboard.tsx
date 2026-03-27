@@ -129,6 +129,8 @@ export function CostDashboard() {
     );
   }
 
+  const currentRange = DATE_RANGES[selectedRange];
+
   // Determine which platforms have data for the stacked chart
   const hasClaude = data.daily_breakdown.some((d) => (d.claude ?? 0) > 0);
   const hasGemini = data.daily_breakdown.some((d) => (d.gemini ?? 0) > 0);
@@ -197,8 +199,6 @@ export function CostDashboard() {
     message_count: p.message_count,
     colour: PLATFORM_COLOURS[p.platform] ?? "#888",
   }));
-
-  const currentRange = DATE_RANGES[selectedRange];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
