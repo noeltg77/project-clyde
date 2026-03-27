@@ -21,6 +21,7 @@ from services.registry import (
     save_registry,
     create_agent,
     update_agent,
+    delete_agent,
     get_agent_by_name,
     get_agent_by_id,
     get_active_agents,
@@ -358,6 +359,37 @@ async def update_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 
 @tool(
+    "delete_agent",
+    "Permanently delete an agent — removes them from the org, deletes their prompt, "
+    "memory, and working directory. This cannot be undone.",
+    {"agent_name_or_id": str},
+)
+async def delete_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Permanently delete an agent."""
+    try:
+        identifier = args.get("agent_name_or_id", "").strip()
+        if not identifier:
+            return _error_response("agent_name_or_id is required.")
+
+        agent = get_agent_by_name(_working_dir, identifier)
+        if not agent:
+            agent = get_agent_by_id(_working_dir, identifier)
+        if not agent:
+            return _error_response(f"Agent '{identifier}' not found.")
+
+        deleted = delete_agent(_working_dir, agent["id"])
+        return _text_response(
+            f"Permanently deleted agent '{deleted['name']}' ({deleted['id']}). "
+            f"Prompt, memory, and working directory removed."
+        )
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        return _error_response(f"Failed to delete agent: {str(e)}")
+
+
+@tool(
     "get_agent_details",
     "Get full details of a specific agent including their system prompt content, "
     "memory path, working directory, tools, and skills.",
@@ -549,9 +581,11 @@ async def update_team_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "delete_team",
-    "Delete a team. All agents in the team will become unassigned.",
+    "Delete a team and permanently delete all its agents (prompts, memory, working dirs). "
+    "Set delete_members to 'false' to keep agents and move them to unassigned instead.",
     {
         "team_name_or_id": str,
+        "delete_members": str,
     },
 )
 async def delete_team_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -568,12 +602,21 @@ async def delete_team_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response(f"Team '{identifier}' not found.")
 
         members = get_team_members(_working_dir, team["id"])
-        delete_team(_working_dir, team["id"])
+        should_delete = args.get("delete_members", "true").strip().lower() != "false"
+        result = delete_team(_working_dir, team["id"], delete_members=should_delete)
 
-        return _text_response(
-            f"Deleted team '{team['name']}'. "
-            f"{len(members)} agent(s) unassigned."
-        )
+        if should_delete:
+            deleted = result.get("deleted_members", [])
+            return _text_response(
+                f"Deleted team '{team['name']}' and permanently removed "
+                f"{len(deleted)} agent(s): {', '.join(deleted) if deleted else 'none'}."
+            )
+        else:
+            unassigned = result.get("unassigned_members", [])
+            return _text_response(
+                f"Deleted team '{team['name']}'. "
+                f"{len(unassigned)} agent(s) moved to unassigned."
+            )
 
     except ValueError as e:
         return _error_response(str(e))
@@ -3797,6 +3840,7 @@ registry_mcp_server = create_sdk_mcp_server(
         create_agent_tool,
         list_agents_tool,
         update_agent_tool,
+        delete_agent_tool,
         get_agent_details_tool,
         # Phase 3B: Search
         search_history_tool,

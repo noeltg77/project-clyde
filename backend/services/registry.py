@@ -585,6 +585,55 @@ def archive_agent(working_dir: str, registry_id: str) -> dict[str, Any]:
     return update_agent(working_dir, registry_id, {"status": "archived"})
 
 
+def delete_agent(working_dir: str, registry_id: str) -> dict[str, Any]:
+    """Permanently delete an agent: remove from team file, delete prompt/memory/working dir."""
+    index_path = _teams_index_path(working_dir)
+    _invalidate_cache(index_path)
+    with open(index_path, "r") as f:
+        index = json.load(f)
+
+    # Find and remove from their team file
+    agent_entry = None
+    for team_entry in index.get("teams", []):
+        team_path = _team_file_path(working_dir, team_entry["id"])
+        if not os.path.exists(team_path):
+            continue
+        _invalidate_cache(team_path)
+        with open(team_path, "r") as f:
+            team_data = json.load(f)
+        for i, member in enumerate(team_data.get("members", [])):
+            if member["id"] == registry_id:
+                agent_entry = team_data["members"].pop(i)
+                _write_json_atomic(team_path, team_data)
+                break
+        if agent_entry:
+            break
+
+    if not agent_entry:
+        raise ValueError(f"Agent with id '{registry_id}' not found")
+
+    name_lower = agent_entry.get("name", "").lower().replace(" ", "-")
+
+    # Delete prompt file
+    prompt_path = os.path.join(working_dir, "prompts", f"{name_lower}-system.md")
+    if os.path.exists(prompt_path):
+        os.remove(prompt_path)
+
+    # Delete memory file
+    memory_path = os.path.join(working_dir, "memory", f"{name_lower}-memory.md")
+    if os.path.exists(memory_path):
+        os.remove(memory_path)
+
+    # Delete agent working directory
+    agent_work_dir = os.path.join(working_dir, "agents", name_lower)
+    if os.path.isdir(agent_work_dir):
+        import shutil
+        shutil.rmtree(agent_work_dir, ignore_errors=True)
+
+    _touch_index_timestamp(working_dir)
+    return agent_entry
+
+
 # ─── Team Management ─────────────────────────────────────────────
 
 TEAM_COLORS = [
@@ -752,8 +801,17 @@ def update_team(
     return index["teams"][i]
 
 
-def delete_team(working_dir: str, team_id: str) -> bool:
-    """Delete a team: move members to unassigned, remove team file, remove from index."""
+def delete_team(
+    working_dir: str, team_id: str, delete_members: bool = False
+) -> dict[str, Any]:
+    """Delete a team.
+
+    If delete_members is True, permanently deletes all agents and their files.
+    Otherwise moves members to unassigned.
+
+    Returns {"deleted_members": [...]} if members were deleted, or
+    {"unassigned_members": [...]} if members were moved.
+    """
     index_path = _teams_index_path(working_dir)
     _invalidate_cache(index_path)
     with open(index_path, "r") as f:
@@ -764,7 +822,7 @@ def delete_team(working_dir: str, team_id: str) -> bool:
     if len(new_teams) == len(teams):
         raise ValueError(f"Team with id '{team_id}' not found")
 
-    # Move members to unassigned
+    result: dict[str, Any] = {}
     team_path = _team_file_path(working_dir, team_id)
     if os.path.exists(team_path):
         _invalidate_cache(team_path)
@@ -773,12 +831,33 @@ def delete_team(working_dir: str, team_id: str) -> bool:
         members = team_data.get("members", [])
 
         if members:
-            unassigned_path = _team_file_path(working_dir, "team-unassigned")
-            _invalidate_cache(unassigned_path)
-            with open(unassigned_path, "r") as f:
-                unassigned = json.load(f)
-            unassigned["members"].extend(members)
-            _write_json_atomic(unassigned_path, unassigned)
+            if delete_members:
+                # Permanently delete each agent and their files
+                for member in members:
+                    name_lower = member.get("name", "").lower().replace(" ", "-")
+                    # Delete prompt
+                    prompt_path = os.path.join(working_dir, "prompts", f"{name_lower}-system.md")
+                    if os.path.exists(prompt_path):
+                        os.remove(prompt_path)
+                    # Delete memory
+                    memory_path = os.path.join(working_dir, "memory", f"{name_lower}-memory.md")
+                    if os.path.exists(memory_path):
+                        os.remove(memory_path)
+                    # Delete working directory
+                    agent_work_dir = os.path.join(working_dir, "agents", name_lower)
+                    if os.path.isdir(agent_work_dir):
+                        import shutil
+                        shutil.rmtree(agent_work_dir, ignore_errors=True)
+                result["deleted_members"] = [m.get("name") for m in members]
+            else:
+                # Move to unassigned
+                unassigned_path = _team_file_path(working_dir, "team-unassigned")
+                _invalidate_cache(unassigned_path)
+                with open(unassigned_path, "r") as f:
+                    unassigned = json.load(f)
+                unassigned["members"].extend(members)
+                _write_json_atomic(unassigned_path, unassigned)
+                result["unassigned_members"] = [m.get("name") for m in members]
 
         # Remove team file
         os.remove(team_path)
@@ -789,7 +868,7 @@ def delete_team(working_dir: str, team_id: str) -> bool:
     index["updated_at"] = datetime.now(timezone.utc).isoformat()
     _write_json_atomic(index_path, index)
 
-    return True
+    return result
 
 
 def assign_agent_to_team(
