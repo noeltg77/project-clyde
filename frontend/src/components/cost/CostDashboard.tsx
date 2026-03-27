@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   BarChart,
   Bar,
@@ -19,6 +19,7 @@ type CostData = {
   today_usd: number;
   week_usd: number;
   month_usd: number;
+  range_usd: number;
   by_agent: {
     name: string;
     cost_usd: number;
@@ -38,6 +39,23 @@ type CostData = {
   }[];
 };
 
+type DateRange = {
+  label: string;
+  days?: number;
+  rangeType?: string;
+};
+
+const DATE_RANGES: DateRange[] = [
+  { label: "7 Days", days: 7 },
+  { label: "14 Days", days: 14 },
+  { label: "30 Days", days: 30 },
+  { label: "Month to Date", rangeType: "mtd" },
+  { label: "3 Months", days: 90 },
+  { label: "6 Months", days: 180 },
+  { label: "Year", days: 365 },
+  { label: "Year to Date", rangeType: "ytd" },
+];
+
 const PLATFORM_COLOURS: Record<string, string> = {
   claude: "#C8FF00",
   gemini: "#4285F4",
@@ -53,24 +71,36 @@ const PLATFORM_LABELS: Record<string, string> = {
 export function CostDashboard() {
   const [data, setData] = useState<CostData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedRange, setSelectedRange] = useState(1); // default: 14 Days
 
-  useEffect(() => {
-    async function fetchCost() {
-      try {
-        setLoading(true);
-        const res = await fetch(`${API_URL}/api/cost`);
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        console.error("Failed to fetch cost data:", err);
-      } finally {
-        setLoading(false);
+  const fetchCost = useCallback(async (range: DateRange) => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (range.rangeType) {
+        params.set("range_type", range.rangeType);
+      } else if (range.days) {
+        params.set("days", String(range.days));
       }
+      const res = await fetch(`${API_URL}/api/cost?${params.toString()}`);
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      console.error("Failed to fetch cost data:", err);
+    } finally {
+      setLoading(false);
     }
-    fetchCost();
   }, []);
 
-  if (loading) {
+  useEffect(() => {
+    fetchCost(DATE_RANGES[selectedRange]);
+  }, [selectedRange, fetchCost]);
+
+  const handleRangeChange = (index: number) => {
+    setSelectedRange(index);
+  };
+
+  if (loading && !data) {
     return (
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
@@ -129,31 +159,55 @@ export function CostDashboard() {
     colour: PLATFORM_COLOURS[p.platform] ?? "#888",
   }));
 
+  const currentRange = DATE_RANGES[selectedRange];
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
+      {/* Header with date range selector */}
       <div className="p-6 pb-0">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-lg font-semibold text-text-primary font-display">
-            Cost Tracking
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-text-primary font-display">
+              Cost Tracking
+            </h2>
+          </div>
+          {/* Date range selector */}
+          <div className="flex flex-wrap gap-1.5">
+            {DATE_RANGES.map((range, idx) => (
+              <button
+                key={range.label}
+                onClick={() => handleRangeChange(idx)}
+                className={`px-3 py-1.5 text-[11px] font-medium rounded-[2px] transition-colors ${
+                  selectedRange === idx
+                    ? "bg-accent-primary text-bg-primary"
+                    : "bg-bg-tertiary text-text-secondary/60 hover:text-text-secondary hover:bg-bg-tertiary/80 border border-border"
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 pt-4">
+      <div className={`flex-1 overflow-y-auto p-6 pt-4 ${loading ? "opacity-50 pointer-events-none" : ""} transition-opacity`}>
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-4">
             <CostCard label="Today" value={data.today_usd} />
             <CostCard label="This Week" value={data.week_usd} />
-            <CostCard label="This Month" value={data.month_usd} />
+            <CostCard
+              label={currentRange.label}
+              value={data.range_usd}
+              highlight
+            />
           </div>
 
           {/* Platform breakdown cards */}
           {data.by_platform && data.by_platform.length > 0 && (
             <div>
               <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
-                By Platform
+                By Platform ({currentRange.label})
               </h3>
               <div className="grid grid-cols-3 gap-4">
                 {data.by_platform.map((p) => (
@@ -188,7 +242,7 @@ export function CostDashboard() {
           {/* Daily stacked chart */}
           <div className="bg-bg-tertiary p-5 rounded-[2px] border border-border">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-4">
-              Last 14 Days
+              {currentRange.label}
             </h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -203,6 +257,7 @@ export function CostDashboard() {
                     tick={{ fontSize: 11, fill: "rgba(255,255,255,0.3)" }}
                     axisLine={false}
                     tickLine={false}
+                    interval={chartData.length > 30 ? Math.floor(chartData.length / 15) : 0}
                   />
                   <YAxis
                     tick={{ fontSize: 11, fill: "rgba(255,255,255,0.3)" }}
@@ -276,7 +331,7 @@ export function CostDashboard() {
           {/* Platform cost table */}
           <div>
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary/60 mb-3">
-              Cost by Platform
+              Cost by Platform ({currentRange.label})
             </h3>
             {platformRows.length === 0 ? (
               <p className="text-sm text-text-secondary/40 text-center py-8">
@@ -366,9 +421,23 @@ export function CostDashboard() {
   );
 }
 
-function CostCard({ label, value }: { label: string; value: number }) {
+function CostCard({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}) {
   return (
-    <div className="bg-bg-tertiary p-4 rounded-[2px] border border-border">
+    <div
+      className={`p-4 rounded-[2px] border ${
+        highlight
+          ? "bg-accent-primary/10 border-accent-primary/30"
+          : "bg-bg-tertiary border-border"
+      }`}
+    >
       <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary/50">
         {label}
       </p>

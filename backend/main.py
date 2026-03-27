@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import shutil
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -428,10 +428,13 @@ async def list_skills():
 
 
 @app.get("/api/cost")
-async def get_cost():
-    """Get cost aggregates: today, week, month, per-agent, daily breakdown."""
+async def get_cost(
+    days: int = Query(14, description="Number of days to look back"),
+    range_type: str | None = Query(None, description="Preset range: mtd or ytd"),
+):
+    """Get cost aggregates for a configurable date range."""
     try:
-        summary = await get_cost_summary()
+        summary = await get_cost_summary(days=days, range_type=range_type)
         return summary
     except Exception as e:
         logger.error(f"[API] Cost query failed: {e}")
@@ -1441,6 +1444,60 @@ async def export_system():
         return bundle
     except Exception as e:
         logger.error(f"[API] Export failed: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/api/teams/{team_id}/export")
+async def export_team(team_id: str, skills: str = ""):
+    """Export a single team as a .clyde package."""
+    try:
+        from services.registry import load_team_file
+
+        team = load_team_file(WORKING_DIR, team_id)
+
+        # Collect prompts and memory for each member
+        prompts = {}
+        memory = {}
+        for member in team.get("members", []):
+            name_lower = member.get("name", "").lower().replace(" ", "-")
+            # System prompt
+            prompt_file = f"{name_lower}-system.md"
+            prompt_path = os.path.join(WORKING_DIR, "prompts", prompt_file)
+            if os.path.exists(prompt_path):
+                with open(prompt_path, "r") as f:
+                    prompts[prompt_file] = f.read()
+            # Memory
+            memory_file = f"{name_lower}-memory.md"
+            memory_path = os.path.join(WORKING_DIR, "memory", memory_file)
+            if os.path.exists(memory_path):
+                with open(memory_path, "r") as f:
+                    memory[memory_file] = f.read()
+
+        # Collect requested skills
+        skill_files = {}
+        if skills:
+            skill_names = [s.strip() for s in skills.split(",") if s.strip()]
+            skills_dir = os.path.join(WORKING_DIR, "skills")
+            if os.path.isdir(skills_dir):
+                for fname in os.listdir(skills_dir):
+                    if fname.endswith(".md"):
+                        skill_name = fname[:-3]  # strip .md
+                        if skill_name in skill_names:
+                            with open(os.path.join(skills_dir, fname), "r") as f:
+                                skill_files[fname] = f.read()
+
+        return {
+            "clyde_package_version": "1.0",
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "team": team,
+            "prompts": prompts,
+            "memory": memory,
+            "skills": skill_files,
+        }
+    except FileNotFoundError:
+        return {"error": f"Team not found: {team_id}"}
+    except Exception as e:
+        logger.error(f"[API] Team export failed: {e}")
         return {"error": str(e)}
 
 

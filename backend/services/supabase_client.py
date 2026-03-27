@@ -341,20 +341,33 @@ async def get_prompt_version(version_id: str) -> dict | None:
 # --- Cost Tracking (Phase 4B) ---
 
 
-async def get_cost_summary() -> dict:
-    """Get cost aggregates: today, this week, this month, per-agent, daily breakdown."""
+async def get_cost_summary(days: int = 14, range_type: str | None = None) -> dict:
+    """Get cost aggregates for a configurable date range.
+
+    Args:
+        days: Number of days to look back (7, 14, 30, 90, 180, 365).
+        range_type: Optional preset - "mtd" (month-to-date) or "ytd" (year-to-date).
+                    When set, overrides the days parameter.
+    """
     client = get_supabase()
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())  # Monday
     month_start = today_start.replace(day=1)
-    thirty_days_ago = today_start - timedelta(days=30)
 
-    # Fetch all messages from the last 30 days with cost data
+    # Determine the range start based on range_type or days
+    if range_type == "mtd":
+        range_start = month_start
+    elif range_type == "ytd":
+        range_start = today_start.replace(month=1, day=1)
+    else:
+        range_start = today_start - timedelta(days=days)
+
+    # Fetch all messages within the range with cost data
     result = (
         client.table("chat_messages")
         .select("cost_usd, agent_name, created_at, metadata")
-        .gte("created_at", thirty_days_ago.isoformat())
+        .gte("created_at", range_start.isoformat())
         .execute()
     )
     messages = result.data
@@ -363,6 +376,7 @@ async def get_cost_summary() -> dict:
     today_usd = 0.0
     week_usd = 0.0
     month_usd = 0.0
+    range_usd = 0.0
     agent_costs: dict[str, dict] = defaultdict(
         lambda: {"cost_usd": 0.0, "message_count": 0}
     )
@@ -395,6 +409,8 @@ async def get_cost_summary() -> dict:
         date_key = msg_time.strftime("%Y-%m-%d")
         daily_costs[date_key] += cost
         daily_platform_costs[date_key][platform] += cost
+
+        range_usd += cost
 
         if msg_time >= today_start:
             today_usd += cost
@@ -434,10 +450,13 @@ async def get_cost_summary() -> dict:
         )
     ]
 
-    # Build daily breakdown (last 14 days) with per-platform split
+    # Calculate the actual number of days in the range for the daily breakdown
+    range_days = (today_start - range_start).days + 1
+
+    # Build daily breakdown with per-platform split
     daily_breakdown = []
-    for i in range(14):
-        d = today_start - timedelta(days=13 - i)
+    for i in range(range_days):
+        d = range_start + timedelta(days=i)
         date_key = d.strftime("%Y-%m-%d")
         cost_usd = daily_costs.get(date_key, 0.0)
         platform_split = daily_platform_costs.get(date_key, {})
@@ -453,6 +472,7 @@ async def get_cost_summary() -> dict:
         "today_usd": round(today_usd, 4),
         "week_usd": round(week_usd, 4),
         "month_usd": round(month_usd, 4),
+        "range_usd": round(range_usd, 4),
         "by_agent": by_agent,
         "by_platform": by_platform,
         "daily_breakdown": daily_breakdown,
