@@ -246,7 +246,7 @@ class DeepAgentChatManager:
 
         chat_model = ChatOpenRouter(
             model=model_id,
-            api_key=api_key,
+            openrouter_api_key=api_key,
             streaming=True,
             temperature=0.7,
             # Set app_title=None to avoid x_title incompatibility with

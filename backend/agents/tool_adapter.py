@@ -31,16 +31,11 @@ def _extract_tool_metadata(tool_obj: Any) -> dict[str, Any] | None:
     The @tool(name, desc, schema) decorator wraps the async function and stores
     metadata on the resulting object. We introspect common attribute patterns.
     """
-    # The claude_agent_sdk @tool decorator stores metadata in various ways.
-    # Try common patterns:
-    name = getattr(tool_obj, "name", None) or getattr(tool_obj, "tool_name", None)
-    description = getattr(tool_obj, "description", None) or getattr(tool_obj, "tool_description", None)
-    schema = getattr(tool_obj, "schema", None) or getattr(tool_obj, "input_schema", None) or getattr(tool_obj, "parameters", None)
-
-    # The underlying async function
-    func = getattr(tool_obj, "func", None) or getattr(tool_obj, "callback", None)
-    if func is None and callable(tool_obj):
-        func = tool_obj
+    # SdkMcpTool objects have: name, description, input_schema, handler
+    name = getattr(tool_obj, "name", None)
+    description = getattr(tool_obj, "description", None)
+    schema = getattr(tool_obj, "input_schema", None)
+    func = getattr(tool_obj, "handler", None)
 
     if not name or not func:
         return None
@@ -183,20 +178,16 @@ def get_langchain_tools() -> list[StructuredTool]:
     Imports the tool list from tools.py and converts them.
     This is the main entry point for the Deep Agent manager.
     """
-    from agents.tools import registry_mcp_server
+    # Import individual tool objects directly from tools.py
+    from agents import tools as tools_module
 
-    # The MCP server object holds the list of tool objects that were passed to it.
-    # Extract them from the server's internal tools list.
-    tool_objects = getattr(registry_mcp_server, "tools", None)
-    if tool_objects is None:
-        tool_objects = getattr(registry_mcp_server, "_tools", None)
-    if tool_objects is None:
-        # Fallback: import the tool objects directly from tools.py
-        from agents import tools as tools_module
-        tool_objects = [
-            getattr(tools_module, attr)
-            for attr in dir(tools_module)
-            if attr.endswith("_tool") and not attr.startswith("_")
-        ]
+    tool_objects = [
+        getattr(tools_module, attr)
+        for attr in dir(tools_module)
+        if attr.endswith("_tool")
+        and not attr.startswith("_")
+        and hasattr(getattr(tools_module, attr), "name")
+        and hasattr(getattr(tools_module, attr), "handler")
+    ]
 
     return adapt_tools(tool_objects)
