@@ -360,19 +360,20 @@ class DeepAgentChatManager:
                 elif kind == "on_chat_model_end":
                     output = event.get("data", {}).get("output")
                     if isinstance(output, AIMessage):
-                        # Extract cost from OpenRouter response metadata
+                        # Extract cost from OpenRouter response metadata.
+                        # OpenRouter returns usage.cost (in credits) in every
+                        # response, including the final SSE chunk for streaming.
                         meta = getattr(output, "response_metadata", {}) or {}
                         usage = meta.get("usage", {})
-                        # OpenRouter includes total_cost in some responses
-                        if "total_cost" in meta:
-                            message_cost += float(meta["total_cost"])
-                        elif usage:
-                            # Estimate from token counts (rough fallback)
-                            prompt_tokens = usage.get("prompt_tokens", 0)
-                            completion_tokens = usage.get("completion_tokens", 0)
-                            # Use a rough average rate — OpenRouter returns actual
-                            # cost in most responses, this is just a fallback
-                            message_cost += (prompt_tokens * 0.003 + completion_tokens * 0.015) / 1000
+                        logger.debug(
+                            f"[DEEP_MSG] OpenRouter response_metadata: "
+                            f"usage={usage}, meta_keys={list(meta.keys())}"
+                        )
+                        if usage.get("cost") is not None:
+                            # usage.cost is the actual amount charged
+                            message_cost += float(usage["cost"])
+                        elif meta.get("cost") is not None:
+                            message_cost += float(meta["cost"])
 
         except asyncio.CancelledError:
             logger.info("[DEEP_MSG] Stream cancelled (abort)")
