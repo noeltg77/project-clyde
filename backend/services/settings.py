@@ -78,6 +78,21 @@ OPENAI_PRICING: dict[str, tuple[float, float]] = {
     "gpt-5.4-nano": (0.20, 1.25),
 }
 
+# Maps Clyde model tier names to OpenRouter model IDs (for claude_task delegation)
+OPENROUTER_MODEL_ID_MAP: dict[str, str] = {
+    "opus": "anthropic/claude-opus-4",
+    "sonnet": "anthropic/claude-sonnet-4",
+    "haiku": "anthropic/claude-haiku-4",
+}
+
+# OpenRouter pricing per 1M tokens: (input_usd, output_usd)
+# These are approximate — OpenRouter returns actual cost in response metadata.
+OPENROUTER_PRICING: dict[str, tuple[float, float]] = {
+    "anthropic/claude-opus-4": (15.0, 75.0),
+    "anthropic/claude-sonnet-4": (3.0, 15.0),
+    "anthropic/claude-haiku-4": (0.80, 4.0),
+}
+
 # Popular OpenRouter models for the frontend dropdown
 OPENROUTER_POPULAR_MODELS: list[str] = [
     "anthropic/claude-opus-4",

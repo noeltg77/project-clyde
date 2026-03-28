@@ -123,6 +123,21 @@ class DeepAgentChatManager:
             f"[Current local date and time: {local_now.strftime('%A, %d %B %Y at %I:%M %p')}]\n"
         )
 
+        # Override delegation instructions for OpenRouter mode
+        volatile_parts.append(
+            "## Task Delegation (OpenRouter Mode)\n\n"
+            "**IMPORTANT**: You are running via OpenRouter, NOT the Claude Agent SDK. "
+            "The `Task` tool does NOT exist. Instead, delegate to subagents using:\n\n"
+            "- **Claude agents** (platform: `claude`): Use the `claude_task` tool\n"
+            "- **Gemini agents** (platform: `gemini`): Use the `gemini_task` tool\n"
+            "- **OpenAI agents** (platform: `openai`): Use the `openai_task` tool\n\n"
+            "All three tools take `agent_name` and `task` parameters. The subagent runs "
+            "prompt-in/text-out with no tool access. After receiving the response, YOU "
+            "must handle any file operations (Write, Edit, etc.) with the returned content.\n\n"
+            "**NEVER attempt to do the task yourself if a suitable subagent exists.** "
+            "Always delegate to the appropriate agent.\n"
+        )
+
         # Orchestrator skills
         try:
             registry = load_registry(self.working_dir)
@@ -367,6 +382,20 @@ class DeepAgentChatManager:
 
                 # Tool call started
                 elif kind == "on_tool_start":
+                    # Flush any accumulated text as a finalized bubble before
+                    # the tool call, so text and tool calls appear as separate
+                    # response bubbles (matching the Anthropic SDK behaviour)
+                    if accumulated_text:
+                        yield {
+                            "type": "assistant_text",
+                            "data": {
+                                "text": accumulated_text,
+                                "final": True,
+                                "model_tier": model_id,
+                            },
+                        }
+                        accumulated_text = ""
+
                     tool_name = event.get("name", "unknown")
                     tool_input = event.get("data", {}).get("input", {})
                     num_tool_calls += 1

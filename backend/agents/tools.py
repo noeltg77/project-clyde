@@ -39,10 +39,11 @@ from services.registry import (
     TEAM_COLORS,
 )
 from services.embeddings import generate_query_embedding
-from services.settings import load_settings, GEMINI_MODEL_ID_MAP, OPENAI_MODEL_ID_MAP
+from services.settings import load_settings, GEMINI_MODEL_ID_MAP, OPENAI_MODEL_ID_MAP, OPENROUTER_MODEL_ID_MAP
 from services.supabase_client import search_messages, save_message, save_activity_event
 from services.gemini_client import call_gemini
 from services.openai_client import call_openai
+from services.openrouter_client import call_openrouter
 
 # Module-level state — set by init_tools() / update_session_context()
 _working_dir: str = ""
@@ -3651,6 +3652,212 @@ async def openai_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         return _error_response(f"OpenAI task failed: {str(e)}")
 
 
+# ─── Phase 12B: Claude Subagent via OpenRouter ─────────────────────
+
+_claude_or_logger = _logging.getLogger("services.openrouter_client")
+
+
+@tool(
+    "claude_task",
+    "Delegate a task to a Claude-powered subagent via OpenRouter. The subagent runs "
+    "prompt-in/text-out with no tool access. Use this tool when the target agent's "
+    "platform is 'claude' and you are running in OpenRouter mode. After receiving the "
+    "response, you (Clyde) should handle any file operations (Write, Edit, etc.) with "
+    "the returned content.",
+    {
+        "agent_name": str,
+        "task": str,
+    },
+)
+async def claude_task_tool(args: dict[str, Any]) -> dict[str, Any]:
+    """Delegate a task to a Claude subagent via OpenRouter and return the response."""
+    try:
+        agent_name = args.get("agent_name", "").strip()
+        task = args.get("task", "").strip()
+
+        if not agent_name:
+            return _error_response("agent_name is required.")
+        if not task:
+            return _error_response("task is required.")
+
+        # Look up agent in registry
+        agent = get_agent_by_name(_working_dir, agent_name)
+        if not agent:
+            return _error_response(f"Agent '{agent_name}' not found in registry.")
+
+        # Validate this is a Claude agent
+        platform = agent.get("platform", "claude")
+        if platform != "claude":
+            return _error_response(
+                f"Agent '{agent_name}' is a {platform} agent, not Claude. "
+                f"Use gemini_task for Gemini agents or openai_task for OpenAI agents."
+            )
+
+        # Resolve model — use openrouter_subagent_model from settings, or map the
+        # agent's tier name to an OpenRouter model ID
+        settings = load_settings(_working_dir)
+        model_tier = agent.get("model", "sonnet")
+        model_id = OPENROUTER_MODEL_ID_MAP.get(model_tier)
+        if not model_id:
+            # Fallback to the configured openrouter_subagent_model
+            model_id = settings.get("openrouter_subagent_model", "anthropic/claude-haiku-4")
+
+        # Load system prompt
+        prompt_path = agent.get("system_prompt_path", "")
+        system_prompt = ""
+        if prompt_path:
+            abs_path = os.path.join(_working_dir, prompt_path.lstrip("/"))
+            if os.path.exists(abs_path):
+                with open(abs_path, "r") as f:
+                    system_prompt = f.read()
+
+        # Append agent memory if available
+        memory_path = agent.get("memory_path", "")
+        if memory_path:
+            abs_mem = os.path.join(_working_dir, memory_path.lstrip("/"))
+            if os.path.exists(abs_mem):
+                with open(abs_mem, "r") as f:
+                    memory_content = f.read().strip()
+                if memory_content:
+                    system_prompt += (
+                        "\n\n## Your Memory (Accumulated Knowledge)\n\n"
+                        "The following is your accumulated knowledge from previous tasks. "
+                        "Use this context to inform your current work.\n\n"
+                        f"{memory_content}"
+                    )
+
+        # Inject file boundary rule
+        abs_working = str(Path(_working_dir).resolve())
+        system_prompt += (
+            "\n\n## File Access Rules\n\n"
+            "**CRITICAL**: You may ONLY read, write, and create files within "
+            f"the working directory: `{abs_working}`\n\n"
+            "- ALL file paths MUST be within this directory.\n"
+            "- NEVER use paths starting with `~/`, `/Users/`, `/home/`, `/tmp/`.\n"
+        )
+
+        # Emit "started" activity event to frontend
+        agent_display_name = agent.get("name", agent_name)
+        agent_registry_id = agent.get("id", "")
+        _ws = _ws_var.get()
+        _session_id = _session_id_var.get()
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "started",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "role": agent.get("role", "Claude Subagent"),
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist started event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="started",
+                    description="Claude agent started (OpenRouter)",
+                    metadata={"platform": "claude", "model": model_tier, "via": "openrouter"},
+                )
+            except Exception:
+                pass
+
+        # Call OpenRouter API
+        result = await call_openrouter(
+            model=model_id,
+            system_prompt=system_prompt,
+            user_prompt=task,
+        )
+
+        # Emit "stopped" activity event to frontend
+        if _ws:
+            try:
+                await _ws.send_json({
+                    "type": "agent_activity",
+                    "data": {
+                        "event": "stopped",
+                        "agent_id": agent_registry_id,
+                        "agent_type": agent_display_name,
+                        "parent_agent": "",
+                        "is_team_member": False,
+                        "registry_id": agent_registry_id,
+                        "name": agent_display_name,
+                        "model": model_tier,
+                        "avatar": agent.get("avatar", ""),
+                    },
+                })
+            except Exception:
+                pass
+
+        # Persist stopped event to Supabase
+        if _session_id:
+            try:
+                await save_activity_event(
+                    session_id=_session_id,
+                    agent_id=agent_registry_id,
+                    agent_name=agent_display_name,
+                    event_type="stopped",
+                    description="Claude agent stopped (OpenRouter)",
+                    metadata={"platform": "claude", "model": model_tier, "via": "openrouter"},
+                )
+            except Exception:
+                pass
+
+        # Save cost record to Supabase
+        _claude_or_logger.info(
+            f"[CLAUDE_OR] Cost tracking: session_id={_session_id!r}, "
+            f"cost=${result['cost_usd']:.6f}"
+        )
+        if _session_id:
+            try:
+                await save_message(
+                    session_id=_session_id,
+                    role="agent",
+                    content=result["content"][:500],
+                    agent_name=agent.get("name", agent_name),
+                    token_count=result["input_tokens"] + result["output_tokens"],
+                    cost_usd=result["cost_usd"],
+                    metadata={
+                        "platform": "claude",
+                        "via": "openrouter",
+                        "model": result["model"],
+                        "model_tier": model_tier,
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                    },
+                )
+                _claude_or_logger.info("[CLAUDE_OR] Cost record saved successfully")
+            except Exception as e:
+                _claude_or_logger.error(f"[CLAUDE_OR] Failed to save cost record: {e}", exc_info=True)
+        else:
+            _claude_or_logger.warning("[CLAUDE_OR] No session_id — cost record NOT saved")
+
+        # Return response to Clyde
+        return _text_response(
+            f"**{agent.get('name', agent_name)}** ({model_tier} via OpenRouter) responded:\n\n"
+            f"{result['content']}\n\n"
+            f"---\n"
+            f"Tokens: {result['input_tokens']} in / {result['output_tokens']} out | "
+            f"Cost: ${result['cost_usd']:.6f}"
+        )
+
+    except Exception as e:
+        return _error_response(f"Claude task (OpenRouter) failed: {str(e)}")
+
+
 # ─── Visualisation Tools (Phase 13) ──────────────────────────────
 
 
@@ -3911,6 +4118,8 @@ registry_mcp_server = create_sdk_mcp_server(
         gemini_task_tool,
         # Phase 12: OpenAI Subagent
         openai_task_tool,
+        # Phase 12B: Claude Subagent via OpenRouter
+        claude_task_tool,
         # Phase 13: Visualizations
         create_visualisation_tool,
         create_visual_tool,
