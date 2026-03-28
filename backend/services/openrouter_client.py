@@ -79,7 +79,14 @@ async def call_openrouter(
                 "messages": messages,
             },
         )
-        response.raise_for_status()
+        if response.status_code != 200:
+            body = response.text
+            logger.error(
+                f"[OPENROUTER] API error {response.status_code}: {body}"
+            )
+            raise RuntimeError(
+                f"OpenRouter API returned {response.status_code}: {body}"
+            )
         data = response.json()
 
     # Extract content

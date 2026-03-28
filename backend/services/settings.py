@@ -35,7 +35,7 @@ DEFAULTS: dict[str, Any] = {
     "telegram_allowed_user_ids": [],  # empty = allow all
     "agent_provider": "anthropic",  # "anthropic" | "openrouter"
     "openrouter_model": "anthropic/claude-sonnet-4",
-    "openrouter_subagent_model": "anthropic/claude-haiku-4",
+    "openrouter_subagent_model": "anthropic/claude-haiku-4.5",
 }
 
 # Maps model tier names to Claude API model IDs
@@ -82,7 +82,7 @@ OPENAI_PRICING: dict[str, tuple[float, float]] = {
 OPENROUTER_MODEL_ID_MAP: dict[str, str] = {
     "opus": "anthropic/claude-opus-4",
     "sonnet": "anthropic/claude-sonnet-4",
-    "haiku": "anthropic/claude-haiku-4",
+    "haiku": "anthropic/claude-haiku-4.5",
 }
 
 # OpenRouter pricing per 1M tokens: (input_usd, output_usd)
@@ -90,7 +90,7 @@ OPENROUTER_MODEL_ID_MAP: dict[str, str] = {
 OPENROUTER_PRICING: dict[str, tuple[float, float]] = {
     "anthropic/claude-opus-4": (15.0, 75.0),
     "anthropic/claude-sonnet-4": (3.0, 15.0),
-    "anthropic/claude-haiku-4": (0.80, 4.0),
+    "anthropic/claude-haiku-4.5": (1.0, 5.0),
 }
 
 # Popular OpenRouter models for the frontend dropdown
