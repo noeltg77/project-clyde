@@ -2739,9 +2739,13 @@ async def chat_websocket(ws: WebSocket):
                     pending_viz = get_and_clear_pending_visualizations()
                     pending_vis = get_and_clear_pending_visuals()
 
+                    # Tag platform so cost summary can group OpenRouter separately
+                    _save_provider = _ws_settings.get("agent_provider", "anthropic")
+                    _save_platform = "openrouter" if _save_provider == "openrouter" else "claude"
+
                     if len(response_blocks) <= 1:
                         # Single block — save as before (one message)
-                        msg_metadata: dict = {"model": clyde_model}
+                        msg_metadata: dict = {"model": clyde_model, "platform": _save_platform}
                         if all_steps:
                             msg_metadata["steps"] = all_steps
                         if pending_viz:
@@ -2763,7 +2767,7 @@ async def chat_websocket(ws: WebSocket):
                         # with activity callouts correctly interleaved.
                         for i, block in enumerate(response_blocks):
                             is_last = (i == len(response_blocks) - 1)
-                            block_meta: dict = {"model": clyde_model}
+                            block_meta: dict = {"model": clyde_model, "platform": _save_platform}
                             # Attach only the steps that belong to this block
                             block_steps = all_steps[block["steps_start"]:block["steps_end"]]
                             if block_steps:

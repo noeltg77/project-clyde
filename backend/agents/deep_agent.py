@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from fastapi import WebSocket
 from langchain_openrouter import ChatOpenRouter
 from langchain_core.messages import (
@@ -274,8 +276,6 @@ class DeepAgentChatManager:
             # Set app_title=None to avoid x_title incompatibility with
             # older openrouter SDK versions (default is "LangChain")
             app_title=None,
-            # Request usage/cost data in the final streaming chunk
-            stream_options={"include_usage": True},
         )
 
         # Get all tools adapted for LangChain
@@ -362,6 +362,7 @@ class DeepAgentChatManager:
         accumulated_text = ""
         message_cost = 0.0
         num_tool_calls = 0
+        generation_ids: list[str] = []
 
         try:
             async for event in self.agent.astream_events(
@@ -422,33 +423,15 @@ class DeepAgentChatManager:
                         },
                     }
 
-                # Chat model end — extract cost from usage data
-                # With stream_options={"include_usage": True}, OpenRouter
-                # includes a final chunk with usage.cost in the response.
+                # Chat model end — collect generation IDs for cost lookup
                 elif kind == "on_chat_model_end":
                     output = event.get("data", {}).get("output")
                     if isinstance(output, AIMessage):
                         meta = getattr(output, "response_metadata", {}) or {}
-                        usage = meta.get("usage", {})
-                        token_usage = meta.get("token_usage", {})
-                        # OpenRouter puts cost in usage.cost
-                        cost = (
-                            usage.get("cost")
-                            or token_usage.get("cost")
-                            or meta.get("cost")
-                        )
-                        if cost is not None:
-                            message_cost += float(cost)
-                            logger.info(
-                                f"[DEEP_MSG] Cost from usage: ${float(cost):.6f}, "
-                                f"tokens={usage.get('prompt_tokens', '?')}"
-                                f"/{usage.get('completion_tokens', '?')}"
-                            )
-                        else:
-                            logger.info(
-                                f"[DEEP_MSG] No cost in metadata: "
-                                f"usage={usage}, token_usage={token_usage}"
-                            )
+                        gen_id = meta.get("id")
+                        if gen_id:
+                            generation_ids.append(gen_id)
+                            logger.info(f"[DEEP_MSG] Collected generation ID: {gen_id}")
 
         except asyncio.CancelledError:
             logger.info("[DEEP_MSG] Stream cancelled (abort)")
@@ -485,6 +468,58 @@ class DeepAgentChatManager:
                     "model_tier": model_id,
                 },
             }
+
+        # Query OpenRouter generation endpoint for actual cost data.
+        # LangChain streaming doesn't propagate usage from the final chunk,
+        # so we look up each generation ID after streaming completes.
+        if generation_ids:
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+            for gen_id in generation_ids:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(
+                            f"https://openrouter.ai/api/v1/generation?id={gen_id}",
+                            headers={"Authorization": f"Bearer {api_key}"},
+                        )
+                        if resp.status_code == 200:
+                            gen_data = resp.json().get("data", {})
+                            gen_cost = gen_data.get("total_cost") or gen_data.get("usage", 0)
+                            tokens_in = gen_data.get("tokens_prompt", 0)
+                            tokens_out = gen_data.get("tokens_completion", 0)
+                            if gen_cost and float(gen_cost) > 0:
+                                message_cost += float(gen_cost)
+                                logger.info(
+                                    f"[DEEP_MSG] Cost from generation {gen_id}: "
+                                    f"${float(gen_cost):.6f}, "
+                                    f"tokens={tokens_in}/{tokens_out}"
+                                )
+                            else:
+                                logger.info(
+                                    f"[DEEP_MSG] Generation {gen_id}: no cost yet "
+                                    f"(data={gen_data})"
+                                )
+                        else:
+                            logger.warning(
+                                f"[DEEP_MSG] Generation lookup failed: "
+                                f"{resp.status_code} {resp.text[:200]}"
+                            )
+                except Exception as e:
+                    logger.warning(f"[DEEP_MSG] Generation cost lookup error: {e}")
+
+        # Fallback: estimate cost from pricing table if generation lookup
+        # returned nothing (e.g. cost not yet available)
+        if message_cost <= 0 and generation_ids:
+            from services.settings import OPENROUTER_PRICING
+            pricing = OPENROUTER_PRICING.get(model_id)
+            if pricing:
+                # Rough estimate: ~1000 tokens in, ~500 tokens out per LLM call
+                est_calls = max(len(generation_ids), 1)
+                est_cost = est_calls * (1000 * pricing[0] + 500 * pricing[1]) / 1_000_000
+                message_cost = round(est_cost, 6)
+                logger.info(
+                    f"[DEEP_MSG] Estimated cost from pricing table: "
+                    f"${message_cost:.6f} ({est_calls} calls × {model_id})"
+                )
 
         # Track cumulative cost
         self._total_cost += message_cost
