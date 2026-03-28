@@ -32,7 +32,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
 from langchain.agents.middleware import TodoListMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
 from deepagents.backends import StateBackend
@@ -269,13 +268,15 @@ class DeepAgentChatManager:
         if not self._thread_id:
             self._thread_id = sdk_session_id or f"deep-{int(time.time())}"
 
-        # Build middleware stack — same as create_deep_agent but WITHOUT
-        # SubAgentMiddleware, which injects a `task` tool that conflicts
-        # with Clyde's own delegation tools (gemini_task, openai_task).
+        # Build middleware stack — same as create_deep_agent but WITHOUT:
+        # - SubAgentMiddleware: injects a `task` tool that conflicts with
+        #   Clyde's own delegation tools (gemini_task, openai_task)
+        # - FilesystemMiddleware: injects ls/read_file/write_file/edit_file/
+        #   glob/grep/execute tools that overlap with Clyde's own tools,
+        #   and the `execute` tool confuses models into using it for delegation
         backend = StateBackend
         middleware = [
             TodoListMiddleware(),
-            FilesystemMiddleware(backend=backend),
             create_summarization_middleware(chat_model, backend),
             AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
             PatchToolCallsMiddleware(),
@@ -333,6 +334,7 @@ class DeepAgentChatManager:
             "configurable": {
                 "thread_id": self._thread_id,
             },
+            "recursion_limit": 100,
         }
 
         accumulated_text = ""
