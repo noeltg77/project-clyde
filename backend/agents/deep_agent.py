@@ -29,7 +29,14 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langgraph.checkpoint.memory import MemorySaver
-from deepagents import create_deep_agent
+from langchain.agents import create_agent
+from langchain.agents.middleware import TodoListMiddleware
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+from deepagents.middleware.summarization import create_summarization_middleware
+from deepagents.backends import StateBackend
+from deepagents.graph import BASE_AGENT_PROMPT
 
 from agents.tools import init_tools, update_session_context
 from agents.tool_adapter import get_langchain_tools
@@ -262,12 +269,33 @@ class DeepAgentChatManager:
         if not self._thread_id:
             self._thread_id = sdk_session_id or f"deep-{int(time.time())}"
 
-        # Create the Deep Agent
-        self.agent = create_deep_agent(
-            model=chat_model,
+        # Build middleware stack — same as create_deep_agent but WITHOUT
+        # SubAgentMiddleware, which injects a `task` tool that conflicts
+        # with Clyde's own delegation tools (gemini_task, openai_task).
+        backend = StateBackend
+        middleware = [
+            TodoListMiddleware(),
+            FilesystemMiddleware(backend=backend),
+            create_summarization_middleware(chat_model, backend),
+            AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+            PatchToolCallsMiddleware(),
+        ]
+
+        final_system_prompt = system_prompt + "\n\n" + BASE_AGENT_PROMPT
+
+        self.agent = create_agent(
+            chat_model,
+            system_prompt=final_system_prompt,
             tools=langchain_tools,
-            system_prompt=system_prompt,
+            middleware=middleware,
             checkpointer=self._checkpointer,
+        ).with_config(
+            {
+                "recursion_limit": 100,
+                "metadata": {
+                    "ls_integration": "deepagents",
+                },
+            }
         )
 
         logger.info(
@@ -305,7 +333,6 @@ class DeepAgentChatManager:
             "configurable": {
                 "thread_id": self._thread_id,
             },
-            "recursion_limit": 100,
         }
 
         accumulated_text = ""
