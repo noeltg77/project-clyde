@@ -304,7 +304,8 @@ class DeepAgentChatManager:
         config = {
             "configurable": {
                 "thread_id": self._thread_id,
-            }
+            },
+            "recursion_limit": 100,
         }
 
         accumulated_text = ""
