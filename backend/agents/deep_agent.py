@@ -35,7 +35,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
-from deepagents.backends import StateBackend
+from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.graph import BASE_AGENT_PROMPT
 
 from agents.tools import init_tools, update_session_context
@@ -288,11 +288,12 @@ class DeepAgentChatManager:
         # SubAgentMiddleware, which injects a `task` tool that conflicts
         # with Clyde's own delegation tools (gemini_task, openai_task,
         # claude_task).
-        # FilesystemMiddleware is kept for file tools (read_file, write_file,
-        # edit_file, ls, glob, grep). The `execute` tool is automatically
-        # filtered out by the middleware since StateBackend doesn't implement
-        # SandboxBackendProtocol.
-        backend = StateBackend
+        # FilesystemMiddleware provides file tools (read_file, write_file,
+        # edit_file, ls, glob, grep) backed by the real filesystem.
+        # The `execute` tool is automatically filtered out since
+        # FilesystemBackend doesn't implement SandboxBackendProtocol.
+        abs_working = str(Path(self.working_dir).resolve())
+        backend = FilesystemBackend(root_dir=abs_working)
         middleware = [
             TodoListMiddleware(),
             FilesystemMiddleware(backend=backend),
