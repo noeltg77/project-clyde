@@ -48,6 +48,7 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 | **Global Search (Cmd+K)** | Vector similarity search across all conversations |
 | **Debug Mode** | Collapsible prompt viewer showing system prompts and agent instructions |
 | **Cost-Saving Mode** | CLI toggle to default to Sonnet/Haiku for lower-cost operation |
+| **Telegram Bot** | Chat with Clyde remotely from anywhere via Telegram |
 | **Brutalist UI** | Dark theme with acid-green accents — built different |
 
 ---
@@ -163,6 +164,40 @@ You can also run the services individually if you prefer separate terminals:
 | `npm run dev:frontend` | Start only the frontend (port 3020) |
 | `npm run dev:backend` | Start only the backend (port 8000) |
 | `npm run lint` | Lint check |
+
+---
+
+## Telegram Bot (Remote Chat)
+
+Chat with Clyde from anywhere in the world via Telegram — no port forwarding or public IP required.
+
+### Setup
+
+1. **Create a bot** — Open Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the bot token
+2. **Configure in Clyde** — Open **Settings** > **Controls** > **Telegram Bot**:
+   - Paste your bot token
+   - Toggle **Enable Telegram bot** on
+3. **Start chatting** — Open your new bot in Telegram and send a message
+
+### Connection Modes
+
+| Mode | Default | How it works | Best for |
+|---|---|---|---|
+| **Polling** | Yes | Clyde periodically checks Telegram for new messages (outbound only) | Home PCs, laptops, NAT/firewall |
+| **Webhook** | No | Telegram pushes messages to a public URL you provide | VPS, cloud servers |
+
+Polling works out of the box with no network configuration. Switch to webhook mode in Settings if you're running Clyde on a server with a public URL.
+
+### Security
+
+Add your Telegram user ID to the **Allowed User IDs** field to restrict who can message your bot. Leave it empty to allow anyone. To find your user ID, message [@userinfobot](https://t.me/userinfobot) on Telegram.
+
+### How it works
+
+- Messages from Telegram are processed by the same Clyde backend that powers the web UI
+- Conversations are saved to Supabase and appear in the web UI sidebar
+- Clyde has full access to all tools and sub-agents in headless mode (no permission popups)
+- Long responses are automatically split to fit Telegram's message limit
 
 ---
 
