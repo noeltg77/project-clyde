@@ -1089,8 +1089,9 @@ function TelegramSection({
   const [telegramToken, setTelegramToken] = useState("");
   const [tokenLoaded, setTokenLoaded] = useState(false);
   const [savingToken, setSavingToken] = useState(false);
+  const ids = settings.telegram_allowed_user_ids;
   const [allowedIdsInput, setAllowedIdsInput] = useState(
-    (settings.telegram_allowed_user_ids || []).join(", ")
+    Array.isArray(ids) ? ids.join(", ") : String(ids || "")
   );
 
   // Fetch status and token on mount / when enabled changes
