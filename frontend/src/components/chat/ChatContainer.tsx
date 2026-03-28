@@ -170,6 +170,29 @@ export function ChatContainer() {
           break;
         }
 
+        case "telegram_message": {
+          // Live message from Telegram — append if viewing this session
+          const tmSid = msg.data.session_id as string;
+          const tmRole = msg.data.role as "user" | "clyde";
+          const tmContent = msg.data.content as string;
+          const tmCost = (msg.data.cost_usd as number) || 0;
+          if (tmSid === sessionIdRef.current) {
+            const tmMsg: Message = {
+              id: crypto.randomUUID(),
+              sessionId: tmSid,
+              role: tmRole,
+              agentName: tmRole === "user" ? undefined : "Clyde",
+              content: tmContent,
+              costUsd: tmCost,
+              metadata: { source: "telegram" },
+              createdAt: new Date().toISOString(),
+            };
+            messagesRef.current = [...messagesRef.current, tmMsg];
+            setMessages(messagesRef.current);
+          }
+          break;
+        }
+
         case "session_history": {
           // Batch load prior messages when resuming a session
           const historyMessages = msg.data.messages as Array<{

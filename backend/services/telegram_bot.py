@@ -45,14 +45,15 @@ _MAX_MESSAGE_LENGTH = 4096
 class TelegramService:
     """Manages a Telegram bot that bridges messages to ClydeChatManager."""
 
-    def __init__(self, working_dir: str, on_session_created=None):
+    def __init__(self, working_dir: str, on_session_created=None, on_message=None):
         self.working_dir = working_dir
         self._application: Application | None = None
         self._is_running: bool = False
         self._mode: str = "polling"
 
-        # Callback to notify frontend of new sessions (set by main.py)
+        # Callbacks to notify frontend (set by main.py)
         self._on_session_created = on_session_created
+        self._on_message = on_message  # (session_id, role, content, cost_usd) -> None
 
         # Per-Telegram-user state
         self._managers: dict[int, Any] = {}  # user_id -> ClydeChatManager
@@ -236,10 +237,12 @@ class TelegramService:
 
             manager = await self._get_or_create_manager(user_id, first_name)
 
-            # Save user message to Supabase
+            # Save user message to Supabase and broadcast to web UI
             session_id = self._sessions.get(user_id)
             if session_id:
                 asyncio.create_task(self._save_message(session_id, "user", text))
+                if self._on_message:
+                    asyncio.create_task(self._on_message(session_id, "user", text, 0.0))
 
             # Accumulate response from ClydeChatManager
             # send_message yields streaming text_delta chunks (streaming=True)
@@ -263,11 +266,13 @@ class TelegramService:
             # Send reply to Telegram
             await self._send_telegram_message(update, full_response)
 
-            # Save Clyde's response to Supabase (role must be "clyde" per DB constraint)
+            # Save Clyde's response to Supabase and broadcast to web UI
             if session_id:
                 asyncio.create_task(
                     self._save_message(session_id, "clyde", full_response, cost_usd=cost_usd)
                 )
+                if self._on_message:
+                    asyncio.create_task(self._on_message(session_id, "clyde", full_response, cost_usd))
 
         except Exception as e:
             logger.error(f"[Telegram] Error handling message from {user_id}: {e}", exc_info=True)

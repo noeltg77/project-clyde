@@ -187,6 +187,27 @@ async def broadcast_session_created(session: dict):
         _connected_clients.discard(s)
 
 
+async def broadcast_telegram_message(session_id: str, role: str, content: str, cost_usd: float = 0.0):
+    """Broadcast a Telegram message to any WebSocket client viewing that session."""
+    payload = {
+        "type": "telegram_message",
+        "data": {
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "cost_usd": cost_usd,
+        },
+    }
+    stale: list[WebSocket] = []
+    for client in _connected_clients:
+        try:
+            await client.send_json(payload)
+        except Exception:
+            stale.append(client)
+    for s in stale:
+        _connected_clients.discard(s)
+
+
 async def broadcast_task_event(event_type: str, data: dict):
     """Broadcast a task board event to all connected WebSocket clients."""
     stale: list[WebSocket] = []
@@ -263,7 +284,11 @@ async def lifespan(app: FastAPI):
         print("[Clyde Backend] Sleep prevention disabled")
 
     # Telegram bot service
-    _telegram_service = TelegramService(WORKING_DIR, on_session_created=broadcast_session_created)
+    _telegram_service = TelegramService(
+        WORKING_DIR,
+        on_session_created=broadcast_session_created,
+        on_message=broadcast_telegram_message,
+    )
     await _telegram_service.start()
     print(f"[Clyde Backend] Telegram bot {'started (' + _telegram_service.status['mode'] + ' mode)' if _telegram_service.is_running else 'disabled'}")
 
