@@ -86,11 +86,22 @@ OPENROUTER_MODEL_ID_MAP: dict[str, str] = {
 }
 
 # OpenRouter pricing per 1M tokens: (input_usd, output_usd)
-# These are approximate — OpenRouter returns actual cost in response metadata.
+# Used as fallback when ChatOpenRouter doesn't expose cost in response_metadata.
 OPENROUTER_PRICING: dict[str, tuple[float, float]] = {
+    # Anthropic
     "anthropic/claude-opus-4": (15.0, 75.0),
     "anthropic/claude-sonnet-4": (3.0, 15.0),
     "anthropic/claude-haiku-4.5": (1.0, 5.0),
+    # OpenAI
+    "openai/gpt-5.4": (2.50, 15.0),
+    "openai/gpt-5.4-mini": (0.75, 4.50),
+    # Google
+    "google/gemini-2.5-pro": (1.25, 10.0),
+    "google/gemini-2.5-flash": (0.15, 0.60),
+    # Meta
+    "meta-llama/llama-4-maverick": (0.50, 0.70),
+    # DeepSeek
+    "deepseek/deepseek-r1": (0.55, 2.19),
 }
 
 # Popular OpenRouter models for the frontend dropdown

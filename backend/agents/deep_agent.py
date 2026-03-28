@@ -424,20 +424,45 @@ class DeepAgentChatManager:
                 elif kind == "on_chat_model_end":
                     output = event.get("data", {}).get("output")
                     if isinstance(output, AIMessage):
-                        # Extract cost from OpenRouter response metadata.
-                        # OpenRouter returns usage.cost (in credits) in every
-                        # response, including the final SSE chunk for streaming.
                         meta = getattr(output, "response_metadata", {}) or {}
                         usage = meta.get("usage", {})
-                        logger.debug(
-                            f"[DEEP_MSG] OpenRouter response_metadata: "
-                            f"usage={usage}, meta_keys={list(meta.keys())}"
+                        token_usage = meta.get("token_usage", {})
+                        logger.info(
+                            f"[DEEP_MSG] response_metadata keys={list(meta.keys())}, "
+                            f"usage={usage}, token_usage={token_usage}"
                         )
+
+                        # Try to extract cost from metadata (if ChatOpenRouter exposes it)
+                        step_cost = 0.0
                         if usage.get("cost") is not None:
-                            # usage.cost is the actual amount charged
-                            message_cost += float(usage["cost"])
+                            step_cost = float(usage["cost"])
                         elif meta.get("cost") is not None:
-                            message_cost += float(meta["cost"])
+                            step_cost = float(meta["cost"])
+                        else:
+                            # Fallback: calculate from token counts and pricing table
+                            from services.settings import OPENROUTER_PRICING
+                            in_tok = (
+                                usage.get("prompt_tokens")
+                                or token_usage.get("prompt_tokens")
+                                or 0
+                            )
+                            out_tok = (
+                                usage.get("completion_tokens")
+                                or token_usage.get("completion_tokens")
+                                or 0
+                            )
+                            pricing = OPENROUTER_PRICING.get(model_id)
+                            if pricing and (in_tok or out_tok):
+                                in_rate, out_rate = pricing
+                                step_cost = round(
+                                    (in_tok * in_rate + out_tok * out_rate) / 1_000_000,
+                                    6,
+                                )
+                                logger.info(
+                                    f"[DEEP_MSG] Calculated cost from tokens: "
+                                    f"{in_tok} in, {out_tok} out, ${step_cost:.6f}"
+                                )
+                        message_cost += step_cost
 
         except asyncio.CancelledError:
             logger.info("[DEEP_MSG] Stream cancelled (abort)")
