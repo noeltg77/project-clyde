@@ -360,6 +360,7 @@ class DeepAgentChatManager:
         accumulated_text = ""
         message_cost = 0.0
         num_tool_calls = 0
+        generation_ids: list[str] = []  # OpenRouter generation IDs for cost lookup
 
         try:
             async for event in self.agent.astream_events(
@@ -420,49 +421,14 @@ class DeepAgentChatManager:
                         },
                     }
 
-                # Chat model end — extract cost metadata
+                # Chat model end — collect generation ID for cost lookup
                 elif kind == "on_chat_model_end":
                     output = event.get("data", {}).get("output")
                     if isinstance(output, AIMessage):
                         meta = getattr(output, "response_metadata", {}) or {}
-                        usage = meta.get("usage", {})
-                        token_usage = meta.get("token_usage", {})
-                        logger.info(
-                            f"[DEEP_MSG] response_metadata keys={list(meta.keys())}, "
-                            f"usage={usage}, token_usage={token_usage}"
-                        )
-
-                        # Try to extract cost from metadata (if ChatOpenRouter exposes it)
-                        step_cost = 0.0
-                        if usage.get("cost") is not None:
-                            step_cost = float(usage["cost"])
-                        elif meta.get("cost") is not None:
-                            step_cost = float(meta["cost"])
-                        else:
-                            # Fallback: calculate from token counts and pricing table
-                            from services.settings import OPENROUTER_PRICING
-                            in_tok = (
-                                usage.get("prompt_tokens")
-                                or token_usage.get("prompt_tokens")
-                                or 0
-                            )
-                            out_tok = (
-                                usage.get("completion_tokens")
-                                or token_usage.get("completion_tokens")
-                                or 0
-                            )
-                            pricing = OPENROUTER_PRICING.get(model_id)
-                            if pricing and (in_tok or out_tok):
-                                in_rate, out_rate = pricing
-                                step_cost = round(
-                                    (in_tok * in_rate + out_tok * out_rate) / 1_000_000,
-                                    6,
-                                )
-                                logger.info(
-                                    f"[DEEP_MSG] Calculated cost from tokens: "
-                                    f"{in_tok} in, {out_tok} out, ${step_cost:.6f}"
-                                )
-                        message_cost += step_cost
+                        gen_id = meta.get("id")
+                        if gen_id:
+                            generation_ids.append(gen_id)
 
         except asyncio.CancelledError:
             logger.info("[DEEP_MSG] Stream cancelled (abort)")
@@ -499,6 +465,37 @@ class DeepAgentChatManager:
                     "model_tier": model_id,
                 },
             }
+
+        # Look up actual costs from OpenRouter generation endpoint
+        if generation_ids:
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+            if api_key:
+                import httpx
+                for gen_id in generation_ids:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            resp = await client.get(
+                                f"https://openrouter.ai/api/v1/generation?id={gen_id}",
+                                headers={"Authorization": f"Bearer {api_key}"},
+                            )
+                            if resp.status_code == 200:
+                                gen_data = resp.json().get("data", {})
+                                cost = gen_data.get("total_cost") or gen_data.get("usage", 0)
+                                if cost:
+                                    message_cost += float(cost)
+                                    logger.info(
+                                        f"[DEEP_MSG] Generation {gen_id}: "
+                                        f"cost=${float(cost):.6f}, "
+                                        f"tokens={gen_data.get('tokens_prompt', '?')}"
+                                        f"/{gen_data.get('tokens_completion', '?')}"
+                                    )
+                            else:
+                                logger.warning(
+                                    f"[DEEP_MSG] Generation lookup failed for {gen_id}: "
+                                    f"{resp.status_code}"
+                                )
+                    except Exception as e:
+                        logger.warning(f"[DEEP_MSG] Generation cost lookup error: {e}")
 
         # Track cumulative cost
         self._total_cost += message_cost
