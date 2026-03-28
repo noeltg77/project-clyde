@@ -14,23 +14,29 @@ import logging
 import os
 from typing import Any
 
-from telegram import Update
-from telegram.constants import ChatAction, ParseMode
-from telegram.error import BadRequest, TimedOut
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
-
 from services.settings import load_settings
 from services.supabase_client import create_session, save_message
 from services.embeddings import generate_embedding
 
 logger = logging.getLogger(__name__)
+
+# Lazy-import telegram so a missing package doesn't crash the entire backend.
+# The library is only needed when the user actually enables the Telegram bot.
+try:
+    from telegram import Update
+    from telegram.constants import ChatAction, ParseMode
+    from telegram.error import BadRequest, TimedOut
+    from telegram.ext import (
+        Application,
+        ApplicationBuilder,
+        CommandHandler,
+        ContextTypes,
+        MessageHandler,
+        filters,
+    )
+    _TELEGRAM_AVAILABLE = True
+except ImportError:
+    _TELEGRAM_AVAILABLE = False
 
 # Telegram message length limit
 _MAX_MESSAGE_LENGTH = 4096
@@ -58,6 +64,13 @@ class TelegramService:
         settings = load_settings(self.working_dir)
         if not settings.get("telegram_enabled", False):
             logger.info("[Telegram] Disabled in settings")
+            return
+
+        if not _TELEGRAM_AVAILABLE:
+            logger.warning(
+                "[Telegram] python-telegram-bot not installed — "
+                "run: pip install python-telegram-bot>=21.0"
+            )
             return
 
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
