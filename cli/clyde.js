@@ -512,6 +512,13 @@ async function installDependencies() {
     process.exit(1);
   }
   spinner.succeed('Python dependencies installed');
+
+  // Stamp the install so syncPythonDeps() knows deps are current
+  try {
+    const reqFile = path.join(BACKEND_DIR, 'requirements.txt');
+    const stampFile = path.join(venvPath, '.deps-stamp');
+    fs.writeFileSync(stampFile, String(fs.statSync(reqFile).mtimeMs));
+  } catch { /* ignore */ }
 }
 
 // ─── Working Directory Setup ────────────────────────────────────────
@@ -520,6 +527,38 @@ function ensureWorkingDir() {
   for (const dir of dirs) {
     const p = path.join(WORKING_DIR, dir);
     if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  }
+}
+
+// ─── Dependency Sync (returning users) ────────────────────────────────
+function syncPythonDeps() {
+  const venvPath = path.join(BACKEND_DIR, '.venv');
+  const pip = path.join(venvPath, BIN_DIR, 'pip');
+  if (!fs.existsSync(pip)) return; // no venv yet — first-run will handle it
+
+  // Compare requirements.txt mtime against a stamp file to avoid running pip every launch
+  const stampFile = path.join(venvPath, '.deps-stamp');
+  const reqFile = path.join(BACKEND_DIR, 'requirements.txt');
+  try {
+    const reqMtime = fs.statSync(reqFile).mtimeMs;
+    if (fs.existsSync(stampFile)) {
+      const stampMtime = parseFloat(fs.readFileSync(stampFile, 'utf8'));
+      if (reqMtime <= stampMtime) return; // already up to date
+    }
+  } catch { /* fall through to install */ }
+
+  const spinner = createSpinner('Syncing Python dependencies...');
+  const result = spawnSync(pip, ['install', '-r', 'requirements.txt', '--quiet'], {
+    cwd: BACKEND_DIR,
+    stdio: 'pipe',
+    timeout: 180000,
+  });
+  if (result.status === 0) {
+    spinner.succeed('Python dependencies synced');
+    try { fs.writeFileSync(stampFile, String(fs.statSync(reqFile).mtimeMs)); } catch { /* ignore */ }
+  } else {
+    spinner.fail('Python dependency sync failed (non-fatal)');
+    console.log(C.gray(`  ${(result.stderr || '').toString().trim()}`));
   }
 }
 
@@ -718,6 +757,7 @@ async function main() {
     console.log('');
   } else {
     ensureWorkingDir();
+    syncPythonDeps();
     console.log(`  ${C.check} ${C.white('Configuration detected')}`);
     console.log('');
   }

@@ -75,6 +75,7 @@ from services.file_watcher import FileWatcherService
 from services.performance_logger import PerformanceLogger
 from services.proactive_engine import ProactiveEngine
 from services.sleep_prevention import SleepPrevention
+from services.telegram_bot import TelegramService
 
 # Load environment from project root
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env.local"))
@@ -143,6 +144,9 @@ _connected_clients: set[WebSocket] = set()
 
 # Sleep prevention service
 _sleep_prevention: SleepPrevention | None = None
+
+# Telegram bot service
+_telegram_service: TelegramService | None = None
 
 
 async def _broadcast_insights(insights: list[dict]):
@@ -258,12 +262,19 @@ async def lifespan(app: FastAPI):
     else:
         print("[Clyde Backend] Sleep prevention disabled")
 
+    # Telegram bot service
+    _telegram_service = TelegramService(WORKING_DIR)
+    await _telegram_service.start()
+    print(f"[Clyde Backend] Telegram bot {'started (' + _telegram_service.status['mode'] + ' mode)' if _telegram_service.is_running else 'disabled'}")
+
     # Ensure uploads directory exists
     os.makedirs(os.path.join(WORKING_DIR, "uploads"), exist_ok=True)
 
     yield
 
     # Shutdown
+    if _telegram_service:
+        await _telegram_service.stop()
     if _sleep_prevention:
         _sleep_prevention.stop()
     if _file_watcher:
@@ -287,6 +298,27 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok", "working_dir": WORKING_DIR}
+
+
+# --- Telegram Bot Endpoints ---
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(body: dict):
+    """Receive Telegram webhook updates (for webhook mode)."""
+    if _telegram_service and _telegram_service.is_running:
+        await _telegram_service.process_webhook_update(body)
+        return {"ok": True}
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"error": "Telegram service not running"}, status_code=503)
+
+
+@app.get("/api/telegram/status")
+async def telegram_status():
+    """Get Telegram bot connection status."""
+    if _telegram_service:
+        return _telegram_service.status
+    return {"running": False, "mode": None, "active_chats": 0}
 
 
 @app.get("/api/agents")
@@ -1250,6 +1282,34 @@ async def update_registry_settings(body: dict):
         if "openrouter_subagent_model" in body:
             updates["openrouter_subagent_model"] = str(body["openrouter_subagent_model"]).strip()
 
+        # Telegram settings
+        if "telegram_enabled" in body:
+            enabled = bool(body["telegram_enabled"])
+            updates["telegram_enabled"] = enabled
+            if _telegram_service:
+                if enabled:
+                    asyncio.create_task(_telegram_service.restart())
+                else:
+                    asyncio.create_task(_telegram_service.stop())
+        if "telegram_mode" in body:
+            mode = body["telegram_mode"]
+            if mode in ("polling", "webhook"):
+                updates["telegram_mode"] = mode
+                if _telegram_service and _telegram_service.is_running:
+                    asyncio.create_task(_telegram_service.restart())
+        if "telegram_webhook_url" in body:
+            updates["telegram_webhook_url"] = str(body["telegram_webhook_url"]).strip()
+        if "telegram_polling_interval" in body:
+            updates["telegram_polling_interval"] = max(0.5, min(30, float(body["telegram_polling_interval"])))
+        if "telegram_allowed_user_ids" in body:
+            raw = body["telegram_allowed_user_ids"]
+            if isinstance(raw, list):
+                updates["telegram_allowed_user_ids"] = [int(x) for x in raw if str(x).isdigit()]
+            elif isinstance(raw, str):
+                updates["telegram_allowed_user_ids"] = [
+                    int(x.strip()) for x in raw.split(",") if x.strip().isdigit()
+                ]
+
         if updates:
             update_settings(WORKING_DIR, updates)
         return {"success": True}
@@ -1276,6 +1336,7 @@ _ENV_WHITELIST = {
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "TELEGRAM_BOT_TOKEN",
 }
 
 _ENV_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", ".env.local")
@@ -1350,6 +1411,12 @@ async def update_env_vars(body: dict, background_tasks: BackgroundTasks):
 
         # Reset cached service clients so they pick up new credentials
         reset_supabase_client()
+
+        # Restart Telegram bot if token was changed and service is enabled
+        if "TELEGRAM_BOT_TOKEN" in updates and _telegram_service:
+            tg_settings = load_settings(WORKING_DIR)
+            if tg_settings.get("telegram_enabled"):
+                asyncio.create_task(_telegram_service.restart())
 
         logger.info(f"[API] Updated env vars: {list(updates.keys())}")
 

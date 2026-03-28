@@ -30,6 +30,11 @@ type RegistrySettings = {
   prompt_caching_enabled: boolean;
   prevent_sleep_enabled: boolean;
   debug_mode_enabled: boolean;
+  telegram_enabled: boolean;
+  telegram_mode: "polling" | "webhook";
+  telegram_webhook_url: string;
+  telegram_polling_interval: number;
+  telegram_allowed_user_ids: number[];
 };
 
 const MODEL_OPTIONS = [
@@ -1066,6 +1071,284 @@ function ProactiveSection({
 }
 
 // =============================================================================
+// Telegram Bot Section
+// =============================================================================
+
+function TelegramSection({
+  settings,
+  updateSetting,
+}: {
+  settings: RegistrySettings;
+  updateSetting: (key: string, value: any) => void;
+}) {
+  const [telegramStatus, setTelegramStatus] = useState<{
+    running: boolean;
+    mode: string | null;
+    active_chats: number;
+  } | null>(null);
+  const [telegramToken, setTelegramToken] = useState("");
+  const [tokenLoaded, setTokenLoaded] = useState(false);
+  const [savingToken, setSavingToken] = useState(false);
+  const [allowedIdsInput, setAllowedIdsInput] = useState(
+    (settings.telegram_allowed_user_ids || []).join(", ")
+  );
+
+  // Fetch status and token on mount / when enabled changes
+  useEffect(() => {
+    fetch(`${API_URL}/api/telegram/status`)
+      .then((r) => r.json())
+      .then(setTelegramStatus)
+      .catch(() => {});
+  }, [settings.telegram_enabled]);
+
+  useEffect(() => {
+    if (tokenLoaded) return;
+    fetch(`${API_URL}/api/env-vars`)
+      .then((r) => r.json())
+      .then((d) => {
+        setTelegramToken(d.vars?.TELEGRAM_BOT_TOKEN || "");
+        setTokenLoaded(true);
+      })
+      .catch(() => {});
+  }, [tokenLoaded]);
+
+  // Refresh status periodically when enabled
+  useEffect(() => {
+    if (!settings.telegram_enabled) return;
+    const interval = setInterval(() => {
+      fetch(`${API_URL}/api/telegram/status`)
+        .then((r) => r.json())
+        .then(setTelegramStatus)
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [settings.telegram_enabled]);
+
+  async function saveToken() {
+    if (savingToken) return;
+    setSavingToken(true);
+    try {
+      await fetch(`${API_URL}/api/env-vars`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ TELEGRAM_BOT_TOKEN: telegramToken }),
+      });
+    } catch {
+      // ignore
+    } finally {
+      setSavingToken(false);
+    }
+  }
+
+  const mode = settings.telegram_mode || "polling";
+
+  return (
+    <div>
+      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary mb-3">
+        Telegram Bot
+      </h3>
+
+      {/* Enable toggle */}
+      <div className="flex items-center justify-between p-3 bg-bg-tertiary rounded-[2px] border border-border">
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-text-primary">
+              Enable Telegram bot
+            </p>
+            {settings.telegram_enabled && telegramStatus && (
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    telegramStatus.running
+                      ? "bg-accent-tertiary"
+                      : "bg-error"
+                  }`}
+                />
+                <span className="text-[10px] text-text-secondary/60">
+                  {telegramStatus.running
+                    ? `Connected (${telegramStatus.mode})`
+                    : "Disconnected"}
+                </span>
+              </div>
+            )}
+          </div>
+          <p className="text-[10px] text-text-secondary/60 mt-0.5">
+            Chat with Clyde from anywhere via Telegram
+          </p>
+        </div>
+        <button
+          onClick={() =>
+            updateSetting("telegram_enabled", !settings.telegram_enabled)
+          }
+          className={`relative w-10 h-5 shrink-0 rounded-full transition-colors ${
+            settings.telegram_enabled
+              ? "bg-accent-primary"
+              : "bg-border"
+          }`}
+        >
+          <div
+            className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-primary transition-transform ${
+              settings.telegram_enabled
+                ? "translate-x-5"
+                : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Configuration (shown when enabled or has token) */}
+      {(settings.telegram_enabled || telegramToken) && (
+        <div className="mt-3 space-y-3">
+          {/* Bot Token */}
+          <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
+            <label className="text-sm text-text-primary block mb-2">
+              Bot Token
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={telegramToken}
+                onChange={(e) => setTelegramToken(e.target.value)}
+                onBlur={saveToken}
+                placeholder="Paste token from @BotFather"
+                className="flex-1 bg-bg-primary border border-border text-text-primary text-sm font-mono px-3 py-1.5 rounded-[2px] focus:outline-none focus:border-accent-primary"
+              />
+              {savingToken && (
+                <span className="text-[10px] text-text-secondary/50">
+                  Saving...
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-text-secondary/50 mt-1.5">
+              Create a bot via{" "}
+              <span className="text-text-secondary">@BotFather</span> on
+              Telegram and paste the token here
+            </p>
+          </div>
+
+          {/* Mode Selector */}
+          <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
+            <label className="text-sm text-text-primary block mb-2">
+              Connection Mode
+            </label>
+            <div className="flex gap-2">
+              {(
+                [
+                  {
+                    value: "polling" as const,
+                    label: "Polling",
+                    desc: "Works behind NAT/firewalls (recommended)",
+                  },
+                  {
+                    value: "webhook" as const,
+                    label: "Webhook",
+                    desc: "Requires public URL (VPS/cloud)",
+                  },
+                ] as const
+              ).map((opt) => {
+                const isSelected = mode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() =>
+                      updateSetting("telegram_mode", opt.value)
+                    }
+                    className={`flex-1 p-3 rounded-[2px] border-2 transition-all text-left ${
+                      isSelected
+                        ? "bg-bg-tertiary border-accent-primary"
+                        : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-text-primary">
+                      {opt.label}
+                    </p>
+                    <p className="text-[10px] text-text-secondary/60 mt-0.5">
+                      {opt.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Webhook URL (shown in webhook mode) */}
+          {mode === "webhook" && (
+            <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
+              <label className="text-sm text-text-primary block mb-2">
+                Webhook URL
+              </label>
+              <input
+                type="text"
+                value={settings.telegram_webhook_url || ""}
+                onChange={(e) =>
+                  updateSetting("telegram_webhook_url", e.target.value)
+                }
+                placeholder="https://your-server.com"
+                className="w-full bg-bg-primary border border-border text-text-primary text-sm font-mono px-3 py-1.5 rounded-[2px] focus:outline-none focus:border-accent-primary"
+              />
+              <p className="text-[10px] text-text-secondary/50 mt-1.5">
+                Your server&apos;s public URL — /api/telegram/webhook will be
+                appended automatically
+              </p>
+            </div>
+          )}
+
+          {/* Polling Interval (shown in polling mode) */}
+          {mode === "polling" && (
+            <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
+              <label className="text-sm text-text-primary block mb-2">
+                Polling interval (seconds)
+              </label>
+              <input
+                type="number"
+                min={0.5}
+                max={30}
+                step={0.5}
+                value={settings.telegram_polling_interval || 1}
+                onChange={(e) =>
+                  updateSetting(
+                    "telegram_polling_interval",
+                    parseFloat(e.target.value) || 1
+                  )
+                }
+                className="w-24 bg-bg-primary border border-border text-text-primary text-sm font-mono px-3 py-1.5 rounded-[2px] focus:outline-none focus:border-accent-primary"
+              />
+              <p className="text-[10px] text-text-secondary/50 mt-1.5">
+                How often to check for new messages (lower = faster response,
+                higher = less bandwidth)
+              </p>
+            </div>
+          )}
+
+          {/* Allowed User IDs */}
+          <div className="p-3 bg-bg-tertiary rounded-[2px] border border-border">
+            <label className="text-sm text-text-primary block mb-2">
+              Allowed User IDs
+            </label>
+            <input
+              type="text"
+              value={allowedIdsInput}
+              onChange={(e) => setAllowedIdsInput(e.target.value)}
+              onBlur={() =>
+                updateSetting("telegram_allowed_user_ids", allowedIdsInput)
+              }
+              placeholder="e.g. 123456789, 987654321"
+              className="w-full bg-bg-primary border border-border text-text-primary text-sm font-mono px-3 py-1.5 rounded-[2px] focus:outline-none focus:border-accent-primary"
+            />
+            <p className="text-[10px] text-text-secondary/50 mt-1.5">
+              Comma-separated Telegram user IDs. Leave empty to allow anyone.
+              Send /start to{" "}
+              <span className="text-text-secondary">@userinfobot</span> on
+              Telegram to find your ID.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // Controls Tab
 // =============================================================================
 
@@ -1530,6 +1813,9 @@ function ControlsTab() {
 
       {/* Proactive Mode */}
       <ProactiveSection settings={settings} updateSetting={updateSetting} />
+
+      {/* Telegram Bot */}
+      <TelegramSection settings={settings} updateSetting={updateSetting} />
 
       {/* Debug Mode */}
       <div>

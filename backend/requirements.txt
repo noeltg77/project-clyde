@@ -16,3 +16,4 @@ deepagents>=0.4.12
 langchain-openrouter>=0.3.0
 langchain-core>=0.3.0
 langgraph>=0.3.0
+python-telegram-bot>=21.0

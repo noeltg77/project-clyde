@@ -28,6 +28,11 @@ DEFAULTS: dict[str, Any] = {
     "prompt_caching_enabled": True,
     "prevent_sleep_enabled": False,
     "debug_mode_enabled": False,
+    "telegram_enabled": False,
+    "telegram_mode": "polling",  # "polling" | "webhook"
+    "telegram_webhook_url": "",
+    "telegram_polling_interval": 1.0,  # seconds between polls
+    "telegram_allowed_user_ids": [],  # empty = allow all
     "agent_provider": "anthropic",  # "anthropic" | "openrouter"
     "openrouter_model": "anthropic/claude-sonnet-4",
     "openrouter_subagent_model": "anthropic/claude-haiku-4",
