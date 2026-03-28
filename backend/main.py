@@ -263,7 +263,7 @@ async def lifespan(app: FastAPI):
         print("[Clyde Backend] Sleep prevention disabled")
 
     # Telegram bot service
-    _telegram_service = TelegramService(WORKING_DIR)
+    _telegram_service = TelegramService(WORKING_DIR, on_session_created=broadcast_session_created)
     await _telegram_service.start()
     print(f"[Clyde Backend] Telegram bot {'started (' + _telegram_service.status['mode'] + ' mode)' if _telegram_service.is_running else 'disabled'}")
 

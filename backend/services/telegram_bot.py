@@ -45,11 +45,14 @@ _MAX_MESSAGE_LENGTH = 4096
 class TelegramService:
     """Manages a Telegram bot that bridges messages to ClydeChatManager."""
 
-    def __init__(self, working_dir: str):
+    def __init__(self, working_dir: str, on_session_created=None):
         self.working_dir = working_dir
         self._application: Application | None = None
         self._is_running: bool = False
         self._mode: str = "polling"
+
+        # Callback to notify frontend of new sessions (set by main.py)
+        self._on_session_created = on_session_created
 
         # Per-Telegram-user state
         self._managers: dict[int, Any] = {}  # user_id -> ClydeChatManager
@@ -277,6 +280,10 @@ class TelegramService:
             session_id = session["id"]
             self._sessions[user_id] = session_id
             manager.supabase_session_id = session_id
+
+            # Notify frontend so the session appears in the sidebar
+            if self._on_session_created:
+                asyncio.create_task(self._on_session_created(session))
         except Exception as e:
             logger.warning(f"[Telegram] Failed to create session for user {user_id}: {e}")
 
