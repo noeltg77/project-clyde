@@ -221,6 +221,9 @@ class TelegramService:
                 asyncio.create_task(self._save_message(session_id, "user", text))
 
             # Accumulate response from ClydeChatManager
+            # send_message yields streaming text_delta chunks (streaming=True)
+            # AND final AssistantMessage TextBlocks (final=True) with the full text.
+            # Only use the final blocks to avoid doubling.
             full_response = ""
             cost_usd = 0.0
 
@@ -228,7 +231,7 @@ class TelegramService:
                 chunk_type = chunk.get("type")
                 data = chunk.get("data", {})
 
-                if chunk_type == "assistant_text":
+                if chunk_type == "assistant_text" and data.get("final"):
                     full_response += data.get("text", "")
                 elif chunk_type == "result":
                     cost_usd = data.get("total_cost_usd", 0)
@@ -239,10 +242,10 @@ class TelegramService:
             # Send reply to Telegram
             await self._send_telegram_message(update, full_response)
 
-            # Save assistant message to Supabase
+            # Save Clyde's response to Supabase (role must be "clyde" per DB constraint)
             if session_id:
                 asyncio.create_task(
-                    self._save_message(session_id, "assistant", full_response, cost_usd=cost_usd)
+                    self._save_message(session_id, "clyde", full_response, cost_usd=cost_usd)
                 )
 
         except Exception as e:
