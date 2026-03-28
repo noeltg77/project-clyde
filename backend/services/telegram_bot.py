@@ -15,7 +15,7 @@ import os
 from typing import Any
 
 from services.settings import load_settings
-from services.supabase_client import create_session, save_message
+from services.supabase_client import create_session, save_message, get_session
 from services.embeddings import generate_embedding
 
 logger = logging.getLogger(__name__)
@@ -216,6 +216,24 @@ class TelegramService:
             await update.effective_chat.send_action(ChatAction.TYPING)
 
         try:
+            # If we have a cached session, verify it still exists in the DB
+            # (user may have deleted it from the web UI)
+            cached_session_id = self._sessions.get(user_id)
+            if cached_session_id:
+                try:
+                    session = await get_session(cached_session_id)
+                    if not session:
+                        raise ValueError("Session deleted")
+                except Exception:
+                    logger.info(f"[Telegram] Stale session for user {user_id} — resetting")
+                    self._sessions.pop(user_id, None)
+                    old_manager = self._managers.pop(user_id, None)
+                    if old_manager and old_manager.client:
+                        try:
+                            await old_manager.client.disconnect()
+                        except Exception:
+                            pass
+
             manager = await self._get_or_create_manager(user_id, first_name)
 
             # Save user message to Supabase
