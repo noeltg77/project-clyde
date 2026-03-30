@@ -1406,6 +1406,12 @@ function ControlsTab() {
         setOrchestrator({ ...orchestrator, model: value as Agent["model"] });
       }
 
+      // When agent_provider changes, update the orchestrator platform
+      if (key === "agent_provider" && orchestrator) {
+        const newPlatform: Agent["platform"] = value === "openrouter" ? "openrouter" : "claude";
+        setOrchestrator({ ...orchestrator, platform: newPlatform });
+      }
+
       // Sync debug setting to global store
       if (key === "debug_mode_enabled") {
         setDebugEnabled(value as boolean);

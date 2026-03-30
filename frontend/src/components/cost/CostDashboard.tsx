@@ -36,6 +36,7 @@ type CostData = {
     claude?: number;
     gemini?: number;
     openai?: number;
+    openrouter?: number;
   }[];
 };
 
@@ -60,12 +61,14 @@ const PLATFORM_COLOURS: Record<string, string> = {
   claude: "#C8FF00",
   gemini: "#4285F4",
   openai: "#10A37F",
+  openrouter: "#B066FF",
 };
 
 const PLATFORM_LABELS: Record<string, string> = {
   claude: "Anthropic",
   gemini: "Gemini",
   openai: "OpenAI",
+  openrouter: "OpenRouter",
 };
 
 export function CostDashboard() {
@@ -135,7 +138,8 @@ export function CostDashboard() {
   const hasClaude = data.daily_breakdown.some((d) => (d.claude ?? 0) > 0);
   const hasGemini = data.daily_breakdown.some((d) => (d.gemini ?? 0) > 0);
   const hasOpenAI = data.daily_breakdown.some((d) => (d.openai ?? 0) > 0);
-  const hasAnyPlatform = hasClaude || hasGemini || hasOpenAI;
+  const hasOpenRouter = data.daily_breakdown.some((d) => (d.openrouter ?? 0) > 0);
+  const hasAnyPlatform = hasClaude || hasGemini || hasOpenAI || hasOpenRouter;
 
   // For year/ytd ranges, aggregate daily data into monthly buckets
   const useMonthly =
@@ -363,6 +367,15 @@ export function CostDashboard() {
                       dataKey="openai"
                       stackId="platform"
                       fill={PLATFORM_COLOURS.openai}
+                      radius={[0, 0, 0, 0]}
+                      maxBarSize={36}
+                    />
+                  )}
+                  {hasOpenRouter && (
+                    <Bar
+                      dataKey="openrouter"
+                      stackId="platform"
+                      fill={PLATFORM_COLOURS.openrouter}
                       radius={[2, 2, 0, 0]}
                       maxBarSize={36}
                     />

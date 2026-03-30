@@ -631,13 +631,17 @@ export function ChatContainer() {
             model: string;
             avatar?: string;
             status?: string;
+            platform?: string;
           } | undefined;
           if (orch && orch.id) {
+            // Detect OpenRouter: model contains "/" (e.g. "anthropic/claude-sonnet-4")
+            const orchPlatform: Agent["platform"] =
+              orch.model?.includes("/") ? "openrouter" : ((orch.platform || "claude") as Agent["platform"]);
             setOrchestrator({
               registryId: orch.id,
               name: orch.name || "Clyde",
               role: orch.role || "CEO",
-              platform: "claude",
+              platform: orchPlatform,
               model: (orch.model as Agent["model"]) || "opus",
               avatar: orch.avatar || "",
               status: (orch.status as "active" | "paused" | "archived") || "active",
@@ -888,7 +892,7 @@ export function ChatContainer() {
 
   // Boot sequence: agents + WebSocket first (fast), then session history (slow)
   useEffect(() => {
-    async function fetchAgents() {
+    async function fetchAgents(agentProvider = "anthropic") {
       try {
         const res = await fetch(`${API_URL}/api/agents`);
         if (res.ok) {
@@ -923,11 +927,13 @@ export function ChatContainer() {
           // Populate orchestrator (Clyde) in the store
           const orch = data.orchestrator;
           if (orch && orch.id) {
+            const orchPlatform: Agent["platform"] =
+              agentProvider === "openrouter" ? "openrouter" : (orch.platform || "claude");
             setOrchestrator({
               registryId: orch.id,
               name: orch.name || "Clyde",
               role: orch.role || "CEO",
-              platform: "claude",
+              platform: orchPlatform,
               model: orch.model || "opus",
               avatar: orch.avatar || "",
               status: orch.status || "active",
@@ -954,13 +960,15 @@ export function ChatContainer() {
       }
     }
 
-    async function fetchDebugSetting() {
+    // Returns the agent_provider so callers can use it
+    async function fetchSettings(): Promise<string> {
       try {
         const res = await fetch(`${API_URL}/api/registry/settings`);
         const data = await res.json();
         setDebugEnabled(!!data.debug_mode_enabled);
+        return data.agent_provider || "anthropic";
       } catch {
-        // ignore
+        return "anthropic";
       }
     }
 
@@ -997,8 +1005,10 @@ export function ChatContainer() {
     }
 
     async function boot() {
-      // Phase 1: Load team members + settings + connect WebSocket (parallel, fast)
-      await Promise.all([fetchAgents(), fetchDebugSetting()]);
+      // Phase 1: Load settings first (need provider for orchestrator platform),
+      // then agents in parallel with WebSocket connect
+      const provider = await fetchSettings();
+      await fetchAgents(provider);
 
       // Resume the active session if one was persisted (survives page refresh)
       const savedSessionId = sessionStorage.getItem("clyde_active_session");

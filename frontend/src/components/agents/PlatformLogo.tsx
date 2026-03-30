@@ -10,12 +10,14 @@ const logoMap: Record<AgentPlatform, string> = {
   claude: "/platforms/anthropic.svg",
   gemini: "/platforms/gemini.svg",
   openai: "/platforms/openai.svg",
+  openrouter: "/platforms/openrouter.svg",
 };
 
 const altMap: Record<AgentPlatform, string> = {
   claude: "Anthropic",
   gemini: "Gemini",
   openai: "OpenAI",
+  openrouter: "OpenRouter",
 };
 
 export function PlatformLogo({ platform, size = 18 }: PlatformLogoProps) {
