@@ -1096,10 +1096,16 @@ function TelegramSection({
 
   // Fetch status and token on mount / when enabled changes
   useEffect(() => {
-    fetch(`${API_URL}/api/telegram/status`)
-      .then((r) => r.json())
-      .then(setTelegramStatus)
-      .catch(() => {});
+    // When toggling on, the backend restart is async — delay the fetch
+    // so we capture the actual running state instead of the pre-restart state.
+    const delay = settings.telegram_enabled ? 2000 : 0;
+    const timer = setTimeout(() => {
+      fetch(`${API_URL}/api/telegram/status`)
+        .then((r) => r.json())
+        .then(setTelegramStatus)
+        .catch(() => {});
+    }, delay);
+    return () => clearTimeout(timer);
   }, [settings.telegram_enabled]);
 
   useEffect(() => {

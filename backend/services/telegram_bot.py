@@ -50,6 +50,7 @@ class TelegramService:
         self._application: Application | None = None
         self._is_running: bool = False
         self._mode: str = "polling"
+        self._lock = asyncio.Lock()  # Prevent concurrent start/stop races
 
         # Callbacks to notify frontend (set by main.py)
         self._on_session_created = on_session_created
@@ -65,6 +66,10 @@ class TelegramService:
 
     async def start(self) -> None:
         """Start the Telegram bot if enabled and configured."""
+        async with self._lock:
+            await self._start_unlocked()
+
+    async def _start_unlocked(self) -> None:
         settings = load_settings(self.working_dir)
         if not settings.get("telegram_enabled", False):
             logger.info("[Telegram] Disabled in settings")
@@ -130,6 +135,10 @@ class TelegramService:
 
     async def stop(self) -> None:
         """Stop the Telegram bot and clean up managers."""
+        async with self._lock:
+            await self._stop_unlocked()
+
+    async def _stop_unlocked(self) -> None:
         if not self._application:
             return
 
@@ -150,7 +159,8 @@ class TelegramService:
         except Exception as e:
             logger.warning(f"[Telegram] Error during stop: {e}")
 
-        # Disconnect all ClydeChatManagers
+        # Disconnect all ClydeChatManagers but preserve session mapping
+        # so users resume the same chat session after a restart/toggle.
         for user_id, manager in self._managers.items():
             try:
                 if manager.client:
@@ -159,15 +169,18 @@ class TelegramService:
                 pass
 
         self._managers.clear()
-        self._sessions.clear()
+        # NOTE: self._sessions is intentionally NOT cleared here.
+        # This lets users resume their existing Supabase chat session
+        # after a toggle off→on or restart, rather than starting fresh.
         self._application = None
         self._is_running = False
         logger.info("[Telegram] Bot stopped")
 
     async def restart(self) -> None:
         """Restart the bot to pick up new settings."""
-        await self.stop()
-        await self.start()
+        async with self._lock:
+            await self._stop_unlocked()
+            await self._start_unlocked()
 
     # ------------------------------------------------------------------
     # Webhook support
@@ -297,18 +310,24 @@ class TelegramService:
 
         manager = ClydeChatManager(working_dir=self.working_dir, ws=None)
 
-        # Create a Supabase session for this Telegram user
-        try:
-            session = await create_session(f"Telegram: {first_name}")
-            session_id = session["id"]
-            self._sessions[user_id] = session_id
-            manager.supabase_session_id = session_id
+        # Reuse existing Supabase session if one was preserved across a restart,
+        # otherwise create a fresh one.
+        existing_session_id = self._sessions.get(user_id)
+        if existing_session_id:
+            manager.supabase_session_id = existing_session_id
+            logger.info(f"[Telegram] Reusing session {existing_session_id} for user {user_id}")
+        else:
+            try:
+                session = await create_session(f"Telegram: {first_name}")
+                session_id = session["id"]
+                self._sessions[user_id] = session_id
+                manager.supabase_session_id = session_id
 
-            # Notify frontend so the session appears in the sidebar
-            if self._on_session_created:
-                asyncio.create_task(self._on_session_created(session))
-        except Exception as e:
-            logger.warning(f"[Telegram] Failed to create session for user {user_id}: {e}")
+                # Notify frontend so the session appears in the sidebar
+                if self._on_session_created:
+                    asyncio.create_task(self._on_session_created(session))
+            except Exception as e:
+                logger.warning(f"[Telegram] Failed to create session for user {user_id}: {e}")
 
         # Initialize the manager (headless mode — ws=None triggers bypassPermissions)
         await manager.initialize()

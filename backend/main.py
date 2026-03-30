@@ -147,6 +147,7 @@ _sleep_prevention: SleepPrevention | None = None
 
 # Telegram bot service
 _telegram_service: TelegramService | None = None
+_telegram_pending_task: asyncio.Task | None = None
 
 
 async def _broadcast_insights(insights: list[dict]):
@@ -1312,16 +1313,21 @@ async def update_registry_settings(body: dict):
             enabled = bool(body["telegram_enabled"])
             updates["telegram_enabled"] = enabled
             if _telegram_service:
+                global _telegram_pending_task
+                if _telegram_pending_task and not _telegram_pending_task.done():
+                    _telegram_pending_task.cancel()
                 if enabled:
-                    asyncio.create_task(_telegram_service.restart())
+                    _telegram_pending_task = asyncio.create_task(_telegram_service.restart())
                 else:
-                    asyncio.create_task(_telegram_service.stop())
+                    _telegram_pending_task = asyncio.create_task(_telegram_service.stop())
         if "telegram_mode" in body:
             mode = body["telegram_mode"]
             if mode in ("polling", "webhook"):
                 updates["telegram_mode"] = mode
                 if _telegram_service and _telegram_service.is_running:
-                    asyncio.create_task(_telegram_service.restart())
+                    if _telegram_pending_task and not _telegram_pending_task.done():
+                        _telegram_pending_task.cancel()
+                    _telegram_pending_task = asyncio.create_task(_telegram_service.restart())
         if "telegram_webhook_url" in body:
             updates["telegram_webhook_url"] = str(body["telegram_webhook_url"]).strip()
         if "telegram_polling_interval" in body:
@@ -1441,7 +1447,10 @@ async def update_env_vars(body: dict, background_tasks: BackgroundTasks):
         if "TELEGRAM_BOT_TOKEN" in updates and _telegram_service:
             tg_settings = load_settings(WORKING_DIR)
             if tg_settings.get("telegram_enabled"):
-                asyncio.create_task(_telegram_service.restart())
+                global _telegram_pending_task
+                if _telegram_pending_task and not _telegram_pending_task.done():
+                    _telegram_pending_task.cancel()
+                _telegram_pending_task = asyncio.create_task(_telegram_service.restart())
 
         logger.info(f"[API] Updated env vars: {list(updates.keys())}")
 
