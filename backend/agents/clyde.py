@@ -774,8 +774,13 @@ class ClydeChatManager:
         clyde_model_tier = settings.get("clyde_model", "opus")
         clyde_model_id = MODEL_ID_MAP.get(clyde_model_tier, "claude-opus-4-6")
 
+        # Allow overriding the bundled CLI path (e.g. for older CPUs that
+        # can't run the bundled binary).  Set CLAUDE_CLI_PATH in .env.local.
+        cli_path = os.environ.get("CLAUDE_CLI_PATH") or None
+
         options = ClaudeAgentOptions(
             model=clyde_model_id,
+            cli_path=cli_path,
             system_prompt=system_prompt,
             # Native session resumption: let the CLI manage conversation history
             # and auto-compaction instead of injecting a manual context summary.
