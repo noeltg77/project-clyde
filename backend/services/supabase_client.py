@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -5,23 +6,73 @@ from typing import Any
 
 from supabase import create_client, Client
 
+logger = logging.getLogger(__name__)
+
 _client: Client | None = None
+_supabase_available: bool | None = None  # None = not tested yet
+
+
+class SupabaseUnavailableError(Exception):
+    """Raised when Supabase credentials are missing or invalid."""
+    pass
 
 
 def get_supabase() -> Client:
     global _client
     if _client is None:
-        url = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
-        key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+        url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
+        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        if not url or not key:
+            raise SupabaseUnavailableError(
+                "Supabase credentials are not configured. "
+                "Please update them in Settings > API Keys."
+            )
         _client = create_client(url, key)
     return _client
+
+
+def is_supabase_available() -> bool:
+    """Check if Supabase credentials are present and appear valid."""
+    global _supabase_available
+    if _supabase_available is not None:
+        return _supabase_available
+    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    _supabase_available = bool(url and key and "supabase.co" in url and key.startswith("eyJ"))
+    return _supabase_available
+
+
+async def test_supabase_connection() -> tuple[bool, str]:
+    """Test the Supabase connection by making a lightweight query.
+    Returns (success, message)."""
+    global _supabase_available
+    try:
+        client = get_supabase()
+        # Simple query that works even if tables don't exist yet
+        client.table("chat_sessions").select("id").limit(1).execute()
+        _supabase_available = True
+        return True, "Supabase connection OK"
+    except SupabaseUnavailableError as e:
+        _supabase_available = False
+        return False, str(e)
+    except Exception as e:
+        err_str = str(e)
+        _supabase_available = False
+        if "Invalid API key" in err_str or "401" in err_str or "403" in err_str:
+            return False, "Supabase API key is invalid. Please update it in Settings > API Keys."
+        if "relation" in err_str and "does not exist" in err_str:
+            # Credentials work but schema not deployed — that's a separate issue
+            _supabase_available = True
+            return True, "Supabase connection OK (schema may need deploying)"
+        return False, f"Supabase connection failed: {err_str}"
 
 
 def reset_client() -> None:
     """Clear the cached Supabase client so the next call to get_supabase()
     creates a fresh one with the current environment variables."""
-    global _client
+    global _client, _supabase_available
     _client = None
+    _supabase_available = None
 
 
 # --- Chat Sessions ---

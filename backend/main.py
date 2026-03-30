@@ -51,6 +51,9 @@ from services.supabase_client import (
     update_insight_status,
     delete_insight,
     reset_client as reset_supabase_client,
+    test_supabase_connection,
+    is_supabase_available,
+    SupabaseUnavailableError,
     get_task_columns,
     create_task_column,
     update_task_column,
@@ -296,6 +299,14 @@ async def lifespan(app: FastAPI):
     # Ensure uploads directory exists
     os.makedirs(os.path.join(WORKING_DIR, "uploads"), exist_ok=True)
 
+    # Test Supabase connection at startup
+    supabase_ok, supabase_msg = await test_supabase_connection()
+    if supabase_ok:
+        print(f"[Clyde Backend] {supabase_msg}")
+    else:
+        print(f"[Clyde Backend] WARNING: {supabase_msg}")
+        print("[Clyde Backend] Chat will work in limited mode — update credentials in Settings > API Keys")
+
     yield
 
     # Shutdown
@@ -323,7 +334,11 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "working_dir": WORKING_DIR}
+    return {
+        "status": "ok",
+        "working_dir": WORKING_DIR,
+        "supabase_available": is_supabase_available(),
+    }
 
 
 # --- Telegram Bot Endpoints ---
@@ -370,9 +385,12 @@ async def list_sessions():
     try:
         sessions = await get_sessions(limit=50)
         return {"sessions": sessions}
+    except SupabaseUnavailableError:
+        logger.warning("[API] Supabase not configured — returning empty sessions")
+        return {"sessions": [], "supabase_error": True, "error": "Supabase credentials not configured. Update them in Settings → API Keys."}
     except Exception as e:
         logger.error(f"[API] Failed to list sessions: {e}")
-        return {"sessions": [], "error": str(e)}
+        return {"sessions": [], "supabase_error": True, "error": f"Supabase connection failed: {e}. Check Settings → API Keys."}
 
 
 @app.post("/api/sessions")
@@ -2321,19 +2339,33 @@ async def chat_websocket(ws: WebSocket):
             session_id = resume_session_id
             update_session_context(session_id, ws=ws)
             logger.info(f"[WS] Resuming session: {session_id}")
-            prior_messages = await get_session_messages(session_id)
-            is_first_user_message = len(prior_messages) == 0
-            # Load the SDK session ID for native CLI resumption
-            session_record = await get_session(session_id)
-            if session_record:
-                stored_sdk_session_id = (
-                    (session_record.get("metadata") or {}).get("sdk_session_id")
-                )
-                if stored_sdk_session_id:
-                    logger.info(
-                        f"[WS] Found SDK session ID: {stored_sdk_session_id} "
-                        "— will resume CLI session natively"
+            try:
+                prior_messages = await get_session_messages(session_id)
+                is_first_user_message = len(prior_messages) == 0
+                # Load the SDK session ID for native CLI resumption
+                session_record = await get_session(session_id)
+                if session_record:
+                    stored_sdk_session_id = (
+                        (session_record.get("metadata") or {}).get("sdk_session_id")
                     )
+                    if stored_sdk_session_id:
+                        logger.info(
+                            f"[WS] Found SDK session ID: {stored_sdk_session_id} "
+                            "— will resume CLI session natively"
+                        )
+            except (SupabaseUnavailableError, Exception) as e:
+                logger.warning(f"[WS] Could not load session history (Supabase issue): {e}")
+                is_first_user_message = True
+                await ws.send_json({
+                    "type": "error",
+                    "data": {
+                        "message": (
+                            "Could not load session history — Supabase credentials may be "
+                            "invalid. Please check Settings → API Keys."
+                        ),
+                        "supabase_error": True,
+                    },
+                })
         else:
             # Defer session creation — don't persist until the user sends a message
             session_id = None
@@ -2535,33 +2567,55 @@ async def chat_websocket(ws: WebSocket):
 
                 # Lazy session creation: persist on first message only
                 if session_id is None:
-                    session = await create_session("New Chat")
-                    session_id = session["id"]
-                    update_session_context(session_id, ws=ws)
-                    is_first_user_message = True
-                    logger.info(f"[WS] Created session on first message: {session_id}")
-                    # Notify frontend of the real session_id + add to sidebar
-                    await ws.send_json({
-                        "type": "session_created",
-                        "data": {
-                            "session_id": session_id,
-                            "title": "New Chat",
-                            "created_at": session.get("created_at", ""),
-                        },
-                    })
+                    try:
+                        session = await create_session("New Chat")
+                        session_id = session["id"]
+                        update_session_context(session_id, ws=ws)
+                        is_first_user_message = True
+                        logger.info(f"[WS] Created session on first message: {session_id}")
+                        # Notify frontend of the real session_id + add to sidebar
+                        await ws.send_json({
+                            "type": "session_created",
+                            "data": {
+                                "session_id": session_id,
+                                "title": "New Chat",
+                                "created_at": session.get("created_at", ""),
+                            },
+                        })
+                    except (SupabaseUnavailableError, Exception) as e:
+                        supabase_err = isinstance(e, SupabaseUnavailableError)
+                        err_msg = (
+                            "Supabase credentials are not configured or invalid. "
+                            "Please update them in Settings → API Keys, then reload."
+                        ) if supabase_err else (
+                            f"Failed to create chat session — check your Supabase credentials "
+                            f"in Settings → API Keys. Error: {e}"
+                        )
+                        logger.error(f"[WS] Session creation failed: {e}")
+                        await ws.send_json({
+                            "type": "error",
+                            "data": {
+                                "message": err_msg,
+                                "supabase_error": True,
+                            },
+                        })
+                        continue
 
                 # Save user message to Supabase with embedding (fire concurrently — don't block agent)
                 async def _save_user_message():
                     try:
-                        user_embedding = await generate_embedding(user_content)
-                    except Exception:
-                        user_embedding = None
-                    await save_message(
-                        session_id=session_id,
-                        role="user",
-                        content=user_content,
-                        embedding=user_embedding,
-                    )
+                        try:
+                            user_embedding = await generate_embedding(user_content)
+                        except Exception:
+                            user_embedding = None
+                        await save_message(
+                            session_id=session_id,
+                            role="user",
+                            content=user_content,
+                            embedding=user_embedding,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[WS] Failed to save user message to Supabase: {e}")
 
                 asyncio.create_task(_save_user_message())
 
@@ -2748,8 +2802,10 @@ async def chat_websocket(ws: WebSocket):
                     pending_viz = get_and_clear_pending_visualizations()
                     pending_vis = get_and_clear_pending_visuals()
 
-                    # Tag platform so cost summary can group OpenRouter separately
-                    _save_provider = _ws_settings.get("agent_provider", "anthropic")
+                    # Tag platform so cost summary can group OpenRouter separately.
+                    # Use freshly-loaded _settings (not stale _ws_settings) so mid-session
+                    # provider changes are reflected correctly.
+                    _save_provider = _settings.get("agent_provider", "anthropic")
                     _save_platform = "openrouter" if _save_provider == "openrouter" else "claude"
 
                     if len(response_blocks) <= 1:
@@ -2879,6 +2935,12 @@ async def chat_websocket(ws: WebSocket):
                         _store_sdk_session_id(),
                         return_exceptions=True,
                     )
+                    # Notify frontend that cost data has been persisted to the DB
+                    # so it can refetch the daily total with accurate numbers.
+                    try:
+                        await ws.send_json({"type": "cost_saved"})
+                    except Exception:
+                        pass  # Client may have disconnected
 
                 if ws_disconnected:
                     # Client gone — await the save so it completes before

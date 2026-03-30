@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const https = require('https');
 const { spawn, execFileSync, spawnSync } = require('child_process');
 
 // ─── Paths ──────────────────────────────────────────────────────────
@@ -384,6 +385,53 @@ async function runSetupWizard() {
   return { config, projectRef, dbPassword, costSaving, useOpenRouter };
 }
 
+// ─── Supabase Credential Test ────────────────────────────────────
+function testSupabaseCredentials(supabaseUrl, serviceRoleKey) {
+  return new Promise((resolve) => {
+    const url = new URL('/rest/v1/', supabaseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'GET',
+      headers: {
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      timeout: 10000,
+    };
+
+    const req = https.request(options, (res) => {
+      // 200 = valid credentials, 404 = valid auth but no tables yet (still OK)
+      if (res.statusCode === 200 || res.statusCode === 404) {
+        resolve({ ok: true });
+      } else if (res.statusCode === 401 || res.statusCode === 403) {
+        resolve({ ok: false, reason: 'auth', message: 'Invalid API key — check your Supabase Service Role Key.' });
+      } else {
+        resolve({ ok: false, reason: 'http', message: `Unexpected HTTP ${res.statusCode} from Supabase.` });
+      }
+      res.resume(); // drain
+    });
+
+    req.on('error', (err) => {
+      if (err.code === 'ENOTFOUND' || err.code === 'ERR_TLS_CERT_ALTNAME_INVALID') {
+        resolve({ ok: false, reason: 'dns', message: 'Could not reach that Supabase URL — check the Project URL.' });
+      } else if (err.code === 'ETIMEDOUT' || err.code === 'ECONNREFUSED') {
+        resolve({ ok: false, reason: 'network', message: 'Connection timed out — check the Project URL and your network.' });
+      } else {
+        resolve({ ok: false, reason: 'unknown', message: `Connection failed: ${err.message}` });
+      }
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, reason: 'timeout', message: 'Connection timed out — check the Project URL.' });
+    });
+
+    req.end();
+  });
+}
+
 // ─── Schema Deployment ──────────────────────────────────────────────
 async function deploySchema(projectRef, dbPassword) {
   const spinner = createSpinner('Deploying database schema...');
@@ -719,8 +767,29 @@ async function main() {
     writeEnvFile(config);
     envSpinner.succeed('.env.local created');
 
-    // Deploy schema
-    await deploySchema(projectRef, dbPassword);
+    // Test Supabase credentials before deploying schema
+    let supabaseOk = false;
+    const testSpinner = createSpinner('Testing Supabase credentials...');
+    const testResult = await testSupabaseCredentials(
+      config.NEXT_PUBLIC_SUPABASE_URL,
+      config.SUPABASE_SERVICE_ROLE_KEY
+    );
+    if (testResult.ok) {
+      testSpinner.succeed('Supabase credentials verified');
+      supabaseOk = true;
+    } else {
+      testSpinner.fail(`Supabase credential check failed`);
+      console.log(C.red(`\n  ${testResult.message}`));
+      console.log(C.gray('  You can update your Supabase credentials later in Settings > API Keys.'));
+      console.log(C.gray('  The install will continue and the app will open so you can fix this.\n'));
+    }
+
+    // Deploy schema (skip if credentials failed)
+    if (supabaseOk) {
+      await deploySchema(projectRef, dbPassword);
+    } else {
+      console.log(`  ${C.gray('⊘')} ${C.gray('Skipping schema deployment (Supabase credentials need fixing)')}`);
+    }
 
     // Install dependencies
     await installDependencies();
