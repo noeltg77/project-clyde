@@ -643,6 +643,125 @@ function applyCostSavingMode() {
   }
 }
 
+// ─── Docker Detection ───────────────────────────────────────────────
+function checkDocker() {
+  try {
+    const docker = spawnSync('docker', ['--version'], { encoding: 'utf8', timeout: 5000 });
+    if (docker.status !== 0) return false;
+    const compose = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8', timeout: 5000 });
+    return compose.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Docker Launcher ────────────────────────────────────────────────
+async function launchDocker() {
+  console.log(C.bold(C.green('  STARTING CLYDE (Docker)\n')));
+
+  const composeFile = path.join(ROOT, 'docker-compose.yml');
+  if (!fs.existsSync(composeFile)) {
+    console.log(`  ${C.cross} ${C.red('docker-compose.yml not found')}`);
+    process.exit(1);
+  }
+
+  console.log(`  ${C.dot} ${C.teal('Building and starting containers...')}`);
+  console.log('');
+
+  const docker = spawn('docker', ['compose', 'up', '--build'], {
+    cwd: ROOT,
+    env: { ...process.env, ...loadEnvFile() },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let browserOpened = false;
+
+  const formatLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (trimmed.includes('ERROR') || trimmed.includes('Traceback')) {
+      console.log(`  ${C.orange('[docker]')} ${C.red(trimmed)}`);
+    } else {
+      console.log(`  ${C.orange('[docker]')} ${C.gray(trimmed)}`);
+    }
+
+    if (!browserOpened && (trimmed.includes('Ready') || trimmed.includes('localhost:3020') || trimmed.includes(':3020'))) {
+      browserOpened = true;
+      setTimeout(() => {
+        const cmd = process.platform === 'darwin' ? 'open'
+          : process.platform === 'win32' ? 'start'
+          : 'xdg-open';
+        try {
+          execFileSync(cmd, ['http://localhost:3020'], { stdio: 'ignore' });
+          console.log(`\n  ${C.check} ${C.white('Opened')} ${C.green('http://localhost:3020')} ${C.white('in your browser')}\n`);
+        } catch { /* best-effort */ }
+      }, 1500);
+    }
+  };
+
+  docker.stdout.on('data', (data) => {
+    data.toString().split('\n').forEach(formatLine);
+  });
+  docker.stderr.on('data', (data) => {
+    data.toString().split('\n').forEach(formatLine);
+  });
+
+  console.log(`  ${C.dot} ${C.teal('Backend')}  ${C.gray('\u2192')} ${C.white('http://localhost:8000')}`);
+  console.log(`  ${C.dot} ${C.green('Frontend')} ${C.gray('\u2192')} ${C.white('http://localhost:3020')}`);
+  console.log('');
+  console.log(C.gray('  Press Ctrl+C to stop\n'));
+
+  const shutdown = () => {
+    console.log(`\n  ${C.orange('Shutting down containers...')}`);
+    const down = spawn('docker', ['compose', 'down'], { cwd: ROOT, stdio: 'inherit' });
+    down.on('exit', () => process.exit(0));
+    setTimeout(() => process.exit(0), 10000);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  docker.on('exit', (code) => {
+    if (code !== null && code !== 0) {
+      console.log(`\n  ${C.cross} ${C.red(`Docker exited with code ${code}`)}`);
+    }
+  });
+}
+
+// ─── Run Mode Helpers ───────────────────────────────────────────────
+function getRunMode() {
+  const env = loadEnvFile();
+  return env.RUN_MODE || null;
+}
+
+function setRunMode(mode) {
+  let content = '';
+  if (fs.existsSync(ENV_LOCAL)) {
+    content = fs.readFileSync(ENV_LOCAL, 'utf8');
+    // Remove existing RUN_MODE line if present
+    content = content.replace(/^RUN_MODE=.*\n?/m, '');
+  }
+  if (!content.endsWith('\n')) content += '\n';
+  content += `RUN_MODE=${mode}\n`;
+  fs.writeFileSync(ENV_LOCAL, content);
+}
+
+async function chooseRunMode() {
+  const hasDocker = checkDocker();
+  if (!hasDocker) return 'native';
+
+  console.log('');
+  console.log(C.bold(C.white('  How would you like to run Clyde?\n')));
+  console.log(`  ${C.white('1.')} ${C.green('Native')}  ${C.gray('(Python venv + Node.js \u2014 requires Python 3.10+ & Node 20+)')}`);
+  console.log(`  ${C.white('2.')} ${C.teal('Docker')}  ${C.gray('(Containerized \u2014 only requires Docker Desktop)')}`);
+  console.log('');
+
+  const answer = await prompt('Choose (1 or 2):');
+  const mode = answer.trim() === '2' ? 'docker' : 'native';
+  setRunMode(mode);
+  return mode;
+}
+
 // ─── App Launcher ───────────────────────────────────────────────────
 async function launchApp() {
   console.log(C.bold(C.green('  STARTING CLYDE\n')));
@@ -756,9 +875,10 @@ async function launchApp() {
 async function main() {
   printHeader();
 
-  if (isFirstRun()) {
-    checkPrerequisites();
+  let runMode = getRunMode();
 
+  if (isFirstRun()) {
+    // Setup wizard runs regardless of mode — credentials & schema are always needed
     const { config, projectRef, dbPassword, costSaving, useOpenRouter } = await runSetupWizard();
 
     // Write .env.local
@@ -788,11 +908,17 @@ async function main() {
     if (supabaseOk) {
       await deploySchema(projectRef, dbPassword);
     } else {
-      console.log(`  ${C.gray('⊘')} ${C.gray('Skipping schema deployment (Supabase credentials need fixing)')}`);
+      console.log(`  ${C.gray('\u2298')} ${C.gray('Skipping schema deployment (Supabase credentials need fixing)')}`);
     }
 
-    // Install dependencies
-    await installDependencies();
+    // Ask user how they want to run Clyde
+    runMode = await chooseRunMode();
+
+    if (runMode === 'native') {
+      // Native mode: check prerequisites and install dependencies
+      checkPrerequisites();
+      await installDependencies();
+    }
 
     // Ensure working directory
     ensureWorkingDir();
@@ -820,18 +946,24 @@ async function main() {
 
     // Done
     console.log('');
-    console.log(C.green('  ──────────────────────────────────────────'));
+    console.log(C.green('  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'));
     console.log(C.bold(C.green('  SETUP COMPLETE')));
-    console.log(C.green('  ──────────────────────────────────────────'));
+    console.log(C.green('  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'));
     console.log('');
   } else {
     ensureWorkingDir();
-    syncPythonDeps();
-    console.log(`  ${C.check} ${C.white('Configuration detected')}`);
+    if (runMode !== 'docker') {
+      syncPythonDeps();
+    }
+    console.log(`  ${C.check} ${C.white('Configuration detected')} ${runMode === 'docker' ? C.teal('(Docker mode)') : C.green('(Native mode)')}`);
     console.log('');
   }
 
-  await launchApp();
+  if (runMode === 'docker') {
+    await launchDocker();
+  } else {
+    await launchApp();
+  }
 }
 
 main().catch((err) => {

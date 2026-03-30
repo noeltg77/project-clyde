@@ -1,0 +1,30 @@
+FROM python:3.13-slim
+
+# Install system deps + Node.js 22.x (needed for Claude CLI)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gnupg build-essential && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI via npm (portable JS-based, no AVX2 requirement)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Set CLI path so claude-agent-sdk uses the npm-installed CLI
+ENV CLAUDE_CLI_PATH=/usr/local/bin/claude
+
+WORKDIR /app/backend
+
+# Install Python dependencies (layer cached)
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source
+COPY backend/ .
+
+# Create working directory mount point
+RUN mkdir -p /app/working
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
