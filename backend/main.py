@@ -238,7 +238,7 @@ async def _run_proactive_analysis():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _scheduler, _file_watcher, _performance_logger, _proactive_engine, _sleep_prevention
+    global _scheduler, _file_watcher, _performance_logger, _proactive_engine, _sleep_prevention, _telegram_service
 
     # Startup
     print(f"[Clyde Backend] Working directory: {WORKING_DIR}")
