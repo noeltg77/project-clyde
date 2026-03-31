@@ -23,6 +23,7 @@ def get_openai_client() -> OpenAI:
                     default_headers={
                         "HTTP-Referer": "https://projectclyde.app",
                         "X-OpenRouter-Title": "Project Clyde",
+                        "X-OpenRouter-Categories": "cli-agent,personal-agent,cloud-agent",
                     },
                 )
             else:

@@ -75,6 +75,7 @@ async def call_openrouter(
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://projectclyde.app",
                 "X-OpenRouter-Title": "Project Clyde",
+                "X-OpenRouter-Categories": "cli-agent,personal-agent,cloud-agent",
             },
             json={
                 "model": model,

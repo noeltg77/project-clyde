@@ -275,6 +275,7 @@ class DeepAgentChatManager:
             temperature=0.7,
             app_url="https://projectclyde.app",
             app_title="Project Clyde",
+            app_categories=["cli-agent", "personal-agent", "cloud-agent"],
         )
 
         # Get all tools adapted for LangChain
