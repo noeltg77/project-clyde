@@ -1695,6 +1695,15 @@ async def export_team(team_id: str, skills: str = ""):
                         with open(os.path.join(skills_dir, actual_fname), "r") as f:
                             skill_files[actual_fname] = f.read()
 
+        # Collect full workflow definitions for each workflow ID
+        workflow_defs = {}
+        workflows_dir = os.path.join(WORKING_DIR, "workflows")
+        for wf_id in team.get("workflows", []):
+            wf_path = os.path.join(workflows_dir, f"{wf_id}.json")
+            if os.path.exists(wf_path):
+                with open(wf_path, "r") as f:
+                    workflow_defs[wf_id] = json.load(f)
+
         return {
             "clyde_package_version": "1.0",
             "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -1702,6 +1711,7 @@ async def export_team(team_id: str, skills: str = ""):
             "prompts": prompts,
             "memory": memory,
             "skills": skill_files,
+            "workflows": workflow_defs,
         }
     except FileNotFoundError:
         return {"error": f"Team not found: {team_id}"}
@@ -1775,7 +1785,7 @@ async def import_team(body: dict):
         with open(team_file_path, "r") as f:
             team_data = json.load(f)
         team_data["members"] = members
-        team_data["workflows"] = pkg_team.get("workflows", [])
+        team_data["workflows"] = []  # will be populated after workflow files are written
         team_data["delegation_notes"] = pkg_team.get("delegation_notes", "")
         _write_json_atomic(team_file_path, team_data)
 
@@ -1800,6 +1810,34 @@ async def import_team(body: dict):
             with open(os.path.join(skills_dir, fname), "w") as f:
                 f.write(content)
 
+        # Write workflow files and resolve ID conflicts
+        import re
+        workflows_dir = os.path.join(WORKING_DIR, "workflows")
+        os.makedirs(workflows_dir, exist_ok=True)
+        imported_workflow_ids = []
+        for wf_id, wf_data in body.get("workflows", {}).items():
+            final_id = wf_id
+            wf_path = os.path.join(workflows_dir, f"{final_id}.json")
+            # If a workflow with this ID already exists, generate a new ID
+            if os.path.exists(wf_path):
+                base = re.sub(r"[^a-z0-9-]", "", wf_data.get("name", wf_id).lower().replace(" ", "-"))
+                suffix = uuid.uuid4().hex[:6]
+                final_id = f"{base}-{suffix}"
+                wf_path = os.path.join(workflows_dir, f"{final_id}.json")
+            wf_data["id"] = final_id
+            wf_data["team"] = new_team_id
+            with open(wf_path, "w") as f:
+                json.dump(wf_data, f, indent=2)
+            imported_workflow_ids.append(final_id)
+
+        # Update team file with resolved workflow IDs
+        if imported_workflow_ids:
+            _invalidate_cache(team_file_path)
+            with open(team_file_path, "r") as f:
+                team_data = json.load(f)
+            team_data["workflows"] = imported_workflow_ids
+            _write_json_atomic(team_file_path, team_data)
+
         # Ensure any members without prompt/memory files get defaults
         for member in members:
             name_lower = member["name"].lower().replace(" ", "-")
@@ -1814,7 +1852,7 @@ async def import_team(body: dict):
 
         _touch_index_timestamp(WORKING_DIR)
 
-        logger.info(f"[API] Team imported: {team_name} ({new_team_id}) with {len(members)} agents")
+        logger.info(f"[API] Team imported: {team_name} ({new_team_id}) with {len(members)} agents, {len(imported_workflow_ids)} workflows")
         return {
             "success": True,
             "team_id": new_team_id,
@@ -1822,6 +1860,7 @@ async def import_team(body: dict):
             "agents_imported": len(members),
             "prompts_written": len(body.get("prompts", {})),
             "skills_written": len(body.get("skills", {})),
+            "workflows_written": len(imported_workflow_ids),
         }
     except ValueError as e:
         return {"error": str(e)}
