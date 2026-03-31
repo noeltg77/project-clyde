@@ -73,6 +73,8 @@ async def call_openrouter(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://projectclyde.app",
+                "X-OpenRouter-Title": "Project Clyde",
             },
             json={
                 "model": model,

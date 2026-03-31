@@ -20,6 +20,10 @@ def get_openai_client() -> OpenAI:
                 _client = OpenAI(
                     api_key=openrouter_key,
                     base_url="https://openrouter.ai/api/v1",
+                    default_headers={
+                        "HTTP-Referer": "https://projectclyde.app",
+                        "X-OpenRouter-Title": "Project Clyde",
+                    },
                 )
             else:
                 raise RuntimeError(

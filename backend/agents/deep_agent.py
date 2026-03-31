@@ -273,9 +273,8 @@ class DeepAgentChatManager:
             openrouter_api_key=api_key,
             streaming=True,
             temperature=0.7,
-            # Set app_title=None to avoid x_title incompatibility with
-            # older openrouter SDK versions (default is "LangChain")
-            app_title=None,
+            app_url="https://projectclyde.app",
+            app_title="Project Clyde",
         )
 
         # Get all tools adapted for LangChain
