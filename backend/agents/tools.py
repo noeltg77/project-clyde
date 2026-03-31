@@ -154,7 +154,10 @@ def _error_response(text: str) -> dict[str, Any]:
     "'male' or 'female' to pick from the corresponding avatar pool. An avatar "
     "is always assigned automatically; you do NOT need a separate avatar parameter. "
     "Set platform to 'gemini' for a tool-free Gemini subagent (use gemini-pro, "
-    "gemini-flash, or gemini-lite as the model).",
+    "gemini-flash, or gemini-lite as the model). "
+    "Set platform to 'openrouter' for a tool-free subagent using any OpenRouter "
+    "model — provide the full model slug as the model (e.g. 'x-ai/grok-4.1-fast', "
+    "'deepseek/deepseek-chat-v3-0324', 'google/gemini-2.5-pro').",
     {
         "name": str,
         "role": str,
@@ -177,8 +180,10 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             "claude": default_model,
             "gemini": "gemini-flash",
             "openai": "gpt-5.4-mini",
+            "openrouter": "anthropic/claude-sonnet-4",
         }
-        model = args.get("model", _platform_default_model.get(platform, default_model)).strip().lower()
+        model_raw = args.get("model", _platform_default_model.get(platform, default_model)).strip()
+        model = model_raw if platform == "openrouter" else model_raw.lower()
         gender = args.get("gender", "male").strip().lower()
         system_prompt = args.get("system_prompt", "").strip()
         tools_str = args.get("tools", "")
@@ -189,19 +194,21 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _error_response("Agent role is required.")
         if not system_prompt:
             return _error_response("System prompt is required.")
-        if platform not in ("claude", "gemini", "openai"):
-            return _error_response(f"Invalid platform '{platform}'. Must be claude, gemini, or openai.")
+        if platform not in ("claude", "gemini", "openai", "openrouter"):
+            return _error_response(f"Invalid platform '{platform}'. Must be claude, gemini, openai, or openrouter.")
         if platform == "claude" and model not in ("sonnet", "haiku", "opus"):
             return _error_response(f"Invalid Claude model '{model}'. Must be sonnet, haiku, or opus.")
         if platform == "gemini" and model not in ("gemini-pro", "gemini-flash", "gemini-lite"):
             return _error_response(f"Invalid Gemini model '{model}'. Must be gemini-pro, gemini-flash, or gemini-lite.")
         if platform == "openai" and model not in ("gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"):
             return _error_response(f"Invalid OpenAI model '{model}'. Must be gpt-5.4, gpt-5.4-mini, or gpt-5.4-nano.")
+        if platform == "openrouter" and "/" not in model:
+            return _error_response(f"Invalid OpenRouter model '{model}'. Must be a full model slug (e.g. 'x-ai/grok-4.1-fast').")
         if gender not in ("male", "female"):
             return _error_response(f"Invalid gender '{gender}'. Must be male or female.")
 
-        # Gemini and OpenAI agents are tool-free — force empty tools
-        if platform in ("gemini", "openai"):
+        # Gemini, OpenAI, and OpenRouter agents are tool-free — force empty tools
+        if platform in ("gemini", "openai", "openrouter"):
             tools_list = []
         else:
             # Parse tools — accept comma-separated string or JSON array
@@ -238,7 +245,7 @@ async def create_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
             f"  Prompt: {agent_entry['system_prompt_path']}\n"
             f"  Memory: {agent_entry.get('memory_path', '')}\n"
             f"  Working dir: {agent_entry.get('working_dir', '')}\n"
-            f"  Tools: {', '.join(agent_entry.get('tools', [])) if platform == 'claude' else '(none — Gemini agents are tool-free)'}"
+            f"  Tools: {', '.join(agent_entry.get('tools', [])) if platform == 'claude' else '(none — tool-free agent)'}"
         )
 
     except ValueError as e:
@@ -286,12 +293,15 @@ async def list_agents_tool(args: dict[str, Any]) -> dict[str, Any]:
 @tool(
     "update_agent",
     "Update an existing agent's configuration. Can change role, model, status, "
-    "tools, or skills. Specify the agent by name or ID.",
+    "platform, tools, or skills. Specify the agent by name or ID. "
+    "When changing platform to 'openrouter', set model to a full OpenRouter "
+    "model slug (e.g. 'x-ai/grok-4.1-fast').",
     {
         "agent_name_or_id": str,
         "role": str,
         "model": str,
         "status": str,
+        "platform": str,
         "tools": str,
         "skills": str,
     },
@@ -313,20 +323,35 @@ async def update_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
         # Build updates dict from provided fields
         updates: dict[str, Any] = {}
 
+        # Determine effective platform (new value or existing)
+        new_platform = args.get("platform", "").strip().lower()
+        if new_platform:
+            if new_platform not in ("claude", "gemini", "openai", "openrouter"):
+                return _error_response(f"Invalid platform '{new_platform}'. Must be claude, gemini, openai, or openrouter.")
+            updates["platform"] = new_platform
+        effective_platform = new_platform or agent.get("platform", "claude")
+
         role = args.get("role", "").strip()
         if role:
             updates["role"] = role
 
-        model = args.get("model", "").strip().lower()
-        if model:
-            valid_models = (
-                "sonnet", "haiku", "opus",
-                "gemini-pro", "gemini-flash", "gemini-lite",
-                "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
-            )
-            if model not in valid_models:
-                return _error_response(f"Invalid model '{model}'. Valid: {', '.join(valid_models)}")
-            updates["model"] = model
+        model_raw = args.get("model", "").strip()
+        if model_raw:
+            if effective_platform == "openrouter":
+                # OpenRouter models are full slugs like 'x-ai/grok-4.1-fast'
+                if "/" not in model_raw:
+                    return _error_response(f"Invalid OpenRouter model '{model_raw}'. Must be a full model slug (e.g. 'x-ai/grok-4.1-fast').")
+                updates["model"] = model_raw
+            else:
+                model = model_raw.lower()
+                valid_models = (
+                    "sonnet", "haiku", "opus",
+                    "gemini-pro", "gemini-flash", "gemini-lite",
+                    "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+                )
+                if model not in valid_models:
+                    return _error_response(f"Invalid model '{model}'. Valid: {', '.join(valid_models)}")
+                updates["model"] = model
 
         status = args.get("status", "").strip().lower()
         if status:
@@ -3663,11 +3688,11 @@ _claude_or_logger = _logging.getLogger("services.openrouter_client")
 
 @tool(
     "claude_task",
-    "Delegate a task to a Claude-powered subagent via OpenRouter. The subagent runs "
+    "Delegate a task to a subagent via OpenRouter. The subagent runs "
     "prompt-in/text-out with no tool access. Use this tool when the target agent's "
-    "platform is 'claude' and you are running in OpenRouter mode. After receiving the "
-    "response, you (Clyde) should handle any file operations (Write, Edit, etc.) with "
-    "the returned content.",
+    "platform is 'claude' or 'openrouter' and you are running in OpenRouter mode. "
+    "After receiving the response, you (Clyde) should handle any file operations "
+    "(Write, Edit, etc.) with the returned content.",
     {
         "agent_name": str,
         "task": str,
@@ -3689,22 +3714,26 @@ async def claude_task_tool(args: dict[str, Any]) -> dict[str, Any]:
         if not agent:
             return _error_response(f"Agent '{agent_name}' not found in registry.")
 
-        # Validate this is a Claude agent
+        # Validate this is a Claude or OpenRouter agent
         platform = agent.get("platform", "claude")
-        if platform != "claude":
+        if platform not in ("claude", "openrouter"):
             return _error_response(
-                f"Agent '{agent_name}' is a {platform} agent, not Claude. "
+                f"Agent '{agent_name}' is a {platform} agent, not Claude/OpenRouter. "
                 f"Use gemini_task for Gemini agents or openai_task for OpenAI agents."
             )
 
-        # Resolve model — use openrouter_subagent_model from settings, or map the
-        # agent's tier name to an OpenRouter model ID
+        # Resolve model — OpenRouter platform agents store a full model slug;
+        # Claude platform agents use tier names mapped to OpenRouter model IDs
         settings = load_settings(_working_dir)
         model_tier = agent.get("model", "sonnet")
-        model_id = OPENROUTER_MODEL_ID_MAP.get(model_tier)
-        if not model_id:
-            # Fallback to the configured openrouter_subagent_model
-            model_id = settings.get("openrouter_subagent_model", "anthropic/claude-haiku-4")
+        if platform == "openrouter" and "/" in model_tier:
+            # Full OpenRouter model slug — use directly
+            model_id = model_tier
+        else:
+            model_id = OPENROUTER_MODEL_ID_MAP.get(model_tier)
+            if not model_id:
+                # Fallback to the configured openrouter_subagent_model
+                model_id = settings.get("openrouter_subagent_model", "anthropic/claude-haiku-4")
 
         # Load system prompt
         prompt_path = agent.get("system_prompt_path", "")
@@ -3773,8 +3802,8 @@ async def claude_task_tool(args: dict[str, Any]) -> dict[str, Any]:
                     agent_id=agent_registry_id,
                     agent_name=agent_display_name,
                     event_type="started",
-                    description="Claude agent started (OpenRouter)",
-                    metadata={"platform": "claude", "model": model_tier, "via": "openrouter"},
+                    description=f"{platform.title()} agent started (OpenRouter)",
+                    metadata={"platform": platform, "model": model_tier, "via": "openrouter"},
                 )
             except Exception:
                 pass
@@ -3814,8 +3843,8 @@ async def claude_task_tool(args: dict[str, Any]) -> dict[str, Any]:
                     agent_id=agent_registry_id,
                     agent_name=agent_display_name,
                     event_type="stopped",
-                    description="Claude agent stopped (OpenRouter)",
-                    metadata={"platform": "claude", "model": model_tier, "via": "openrouter"},
+                    description=f"{platform.title()} agent stopped (OpenRouter)",
+                    metadata={"platform": platform, "model": model_tier, "via": "openrouter"},
                 )
             except Exception:
                 pass
@@ -3835,7 +3864,7 @@ async def claude_task_tool(args: dict[str, Any]) -> dict[str, Any]:
                     token_count=result["input_tokens"] + result["output_tokens"],
                     cost_usd=result["cost_usd"],
                     metadata={
-                        "platform": "claude",
+                        "platform": platform,
                         "via": "openrouter",
                         "model": result["model"],
                         "model_tier": model_tier,
