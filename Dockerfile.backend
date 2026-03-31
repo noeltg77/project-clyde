@@ -8,7 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI via npm (portable JS-based, no AVX2 requirement)
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-code && \
+    CLAUDE_BIN=$(which claude 2>/dev/null || find /usr /root -name "claude" -type f 2>/dev/null | head -1) && \
+    echo "Claude CLI found at: $CLAUDE_BIN" && \
+    test -n "$CLAUDE_BIN" && \
+    ln -sf "$CLAUDE_BIN" /usr/local/bin/claude || true
 
 # Set CLI path so claude-agent-sdk uses the npm-installed CLI
 ENV CLAUDE_CLI_PATH=/usr/local/bin/claude
