@@ -30,7 +30,8 @@ export type WebSocketMessage = {
     | "task_column_deleted"
     | "debug_prompts"
     | "visualization"
-    | "visual";
+    | "visual"
+    | "telegram_message";
   data: Record<string, unknown>;
 };
 
