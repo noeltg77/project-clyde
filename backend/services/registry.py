@@ -972,6 +972,7 @@ def select_random_avatar(working_dir: str, gender: str = "male") -> str | None:
     avatars_dir = os.path.join(project_root, "frontend", "public", "avatars", gender)
 
     if not os.path.isdir(avatars_dir):
+        print(f"[Registry] Avatar directory not found: {avatars_dir}")
         return None
 
     # Find all supported image files

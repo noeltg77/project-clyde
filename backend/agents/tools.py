@@ -147,8 +147,12 @@ def _error_response(text: str) -> dict[str, Any]:
 @tool(
     "create_agent",
     "Create a new subagent in the registry. Writes the system prompt to file, "
-    "initialises memory, creates a working directory, selects an avatar, and "
-    "registers the agent. Returns the new agent's details. "
+    "initialises memory, creates a working directory, automatically assigns a "
+    "unique avatar image based on the gender parameter, and registers the agent. "
+    "Returns the new agent's details including the assigned avatar path. "
+    "IMPORTANT: The 'gender' parameter controls avatar selection — set it to "
+    "'male' or 'female' to pick from the corresponding avatar pool. An avatar "
+    "is always assigned automatically; you do NOT need a separate avatar parameter. "
     "Set platform to 'gemini' for a tool-free Gemini subagent (use gemini-pro, "
     "gemini-flash, or gemini-lite as the model).",
     {

@@ -15,6 +15,7 @@ services:
       - ./working:/app/working
       - ./.env.local:/app/.env.local
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./frontend/public/avatars:/app/frontend/public/avatars:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
