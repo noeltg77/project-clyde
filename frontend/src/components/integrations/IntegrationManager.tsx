@@ -973,14 +973,14 @@ export function IntegrationManager() {
 
                 {/* Footer metadata */}
                 <div className="flex items-center gap-4 mt-2">
-                  {isMcp && meta.args && (meta.args as string[]).length > 0 && (
+                  {isMcp && Array.isArray(meta.args) && (meta.args as string[]).length > 0 && (
                     <span className="text-[11px] text-text-secondary/40 font-mono">
-                      args: {(meta.args as string[]).length}
+                      args: {String((meta.args as string[]).length)}
                     </span>
                   )}
-                  {isMcp && meta.env && Object.keys(meta.env as Record<string, string>).length > 0 && (
+                  {isMcp && meta.env != null && Object.keys(meta.env as Record<string, string>).length > 0 && (
                     <span className="text-[11px] text-text-secondary/40 font-mono">
-                      env: {Object.keys(meta.env as Record<string, string>).length} var{Object.keys(meta.env as Record<string, string>).length !== 1 ? "s" : ""}
+                      {`env: ${Object.keys(meta.env as Record<string, string>).length} var${Object.keys(meta.env as Record<string, string>).length !== 1 ? "s" : ""}`}
                     </span>
                   )}
                   {!isMcp && i.credential_env_key && (

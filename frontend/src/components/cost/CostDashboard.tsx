@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   BarChart,
   Bar,
@@ -304,7 +304,7 @@ export function CostDashboard() {
                       textAnchor:
                         chartData.length > 14 && !useMonthly ? "end" : "middle",
                       dy: chartData.length > 14 && !useMonthly ? 5 : 0,
-                    }}
+                    } as React.SVGProps<SVGTextElement>}
                     axisLine={false}
                     tickLine={false}
                     height={chartData.length > 14 && !useMonthly ? 50 : 30}

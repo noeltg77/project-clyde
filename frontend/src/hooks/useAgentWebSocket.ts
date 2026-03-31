@@ -31,7 +31,8 @@ export type WebSocketMessage = {
     | "debug_prompts"
     | "visualization"
     | "visual"
-    | "telegram_message";
+    | "telegram_message"
+    | "cost_saved";
   data: Record<string, unknown>;
 };
 
