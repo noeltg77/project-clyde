@@ -10,6 +10,14 @@
 </p>
 
 <p align="center">
+  <a href="https://projectclyde.app">
+    <img src="https://img.shields.io/badge/Website-projectclyde.app-C8FF00?style=for-the-badge&logo=googlechrome&logoColor=black" alt="Project Clyde Website" />
+  </a>
+  &nbsp;
+  <a href="https://www.patreon.com/cw/ProjectClyde">
+    <img src="https://img.shields.io/badge/Patreon-Support%20Project%20Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
+  </a>
+  &nbsp;
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Agent SDK" />
@@ -311,5 +319,5 @@ Check `.env.local` for: no extra spaces around `=`, no quotes around values, key
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+  <a href="https://projectclyde.app">projectclyde.app</a> · <a href="https://www.patreon.com/cw/ProjectClyde">Patreon</a> · Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
 </p>
