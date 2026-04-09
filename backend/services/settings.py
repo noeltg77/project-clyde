@@ -89,7 +89,9 @@ OPENROUTER_MODEL_ID_MAP: dict[str, str] = {
 # Used as fallback when ChatOpenRouter doesn't expose cost in response_metadata.
 OPENROUTER_PRICING: dict[str, tuple[float, float]] = {
     # Anthropic
+    "anthropic/claude-opus-4.6": (15.0, 75.0),
     "anthropic/claude-opus-4": (15.0, 75.0),
+    "anthropic/claude-sonnet-4.6": (3.0, 15.0),
     "anthropic/claude-sonnet-4": (3.0, 15.0),
     "anthropic/claude-haiku-4.5": (1.0, 5.0),
     # OpenAI
@@ -98,22 +100,35 @@ OPENROUTER_PRICING: dict[str, tuple[float, float]] = {
     # Google
     "google/gemini-2.5-pro": (1.25, 10.0),
     "google/gemini-2.5-flash": (0.15, 0.60),
+    "google/gemini-3-flash-preview": (0.15, 0.60),
     # Meta
     "meta-llama/llama-4-maverick": (0.50, 0.70),
     # DeepSeek
     "deepseek/deepseek-r1": (0.55, 2.19),
+    # Xiaomi
+    "xiaomi/mimo-v2-pro": (0.50, 2.00),
+    # MiniMax
+    "minimax/minimax-m2.7": (1.00, 5.00),
+    "minimax/minimax-m2.5": (0.80, 4.00),
+    # xAI
+    "x-ai/grok-4.1-fast": (3.00, 15.0),
+    # Zhipu
+    "z-ai/glm-5-turbo": (0.50, 2.00),
+    # Moonshot
+    "moonshotai/kimi-k2.5": (1.00, 5.00),
 }
 
 # Popular OpenRouter models for the frontend dropdown
 OPENROUTER_POPULAR_MODELS: list[str] = [
-    "anthropic/claude-opus-4",
-    "anthropic/claude-sonnet-4",
-    "openai/gpt-5.4",
-    "openai/gpt-5.4-mini",
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-    "meta-llama/llama-4-maverick",
-    "deepseek/deepseek-r1",
+    "xiaomi/mimo-v2-pro",
+    "minimax/minimax-m2.7",
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.6",
+    "google/gemini-3-flash-preview",
+    "minimax/minimax-m2.5",
+    "x-ai/grok-4.1-fast",
+    "z-ai/glm-5-turbo",
+    "moonshotai/kimi-k2.5",
 ]
 
 # In-memory cache (TTL-based, invalidated on save)

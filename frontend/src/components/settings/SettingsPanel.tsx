@@ -1534,8 +1534,37 @@ function ControlsTab() {
             <div className="space-y-1.5">
               {openrouterModels.map((model) => {
                 const isSelected = (settings.openrouter_model || "anthropic/claude-sonnet-4") === model;
-                const shortName = model.split("/").pop() || model;
-                const provider = model.split("/")[0] || "";
+                const providerSlug = model.split("/")[0] || "";
+
+                // Friendly display names
+                const MODEL_DISPLAY_NAMES: Record<string, string> = {
+                  "xiaomi/mimo-v2-pro": "MiMo V2 Pro",
+                  "minimax/minimax-m2.7": "MiniMax M2.7",
+                  "anthropic/claude-sonnet-4.6": "Claude Sonnet 4.6",
+                  "anthropic/claude-opus-4.6": "Claude Opus 4.6",
+                  "google/gemini-3-flash-preview": "Gemini 3 Flash",
+                  "minimax/minimax-m2.5": "MiniMax M2.5",
+                  "x-ai/grok-4.1-fast": "Grok 4.1 Fast",
+                  "z-ai/glm-5-turbo": "GLM-5 Turbo",
+                  "moonshotai/kimi-k2.5": "Kimi K2.5",
+                };
+                const displayName = MODEL_DISPLAY_NAMES[model] || (model.split("/").pop() || model);
+
+                // Provider dot colours
+                const PROVIDER_COLORS: Record<string, string> = {
+                  anthropic: "#D4A843",
+                  openai: "#10A37F",
+                  google: "#E8A820",
+                  "meta-llama": "#0064E0",
+                  deepseek: "#4A90D9",
+                  xiaomi: "#FF6900",
+                  minimax: "#2DD4A8",
+                  "x-ai": "#787878",
+                  "z-ai": "#4A90D9",
+                  moonshotai: "#8B5CF6",
+                };
+                const dotColor = PROVIDER_COLORS[providerSlug] || "#666";
+
                 return (
                   <button
                     key={model}
@@ -1546,14 +1575,16 @@ function ControlsTab() {
                         : "bg-bg-tertiary/50 border-border hover:border-text-secondary/30"
                     }`}
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-text-primary">
-                        {shortName}
-                      </p>
-                      <p className="text-[10px] text-text-secondary/60 mt-0.5">
-                        {provider}
-                      </p>
-                    </div>
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: dotColor }}
+                    />
+                    <p className="flex-1 text-sm font-semibold text-text-primary">
+                      {displayName}
+                    </p>
+                    <p className="text-xs text-text-secondary/50 font-mono">
+                      {model}
+                    </p>
                     {isSelected && (
                       <svg
                         width="14"
