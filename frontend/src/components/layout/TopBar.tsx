@@ -61,15 +61,15 @@ export function TopBar() {
         </button>
 
         <a
-          href="https://www.patreon.com/cw/ProjectClyde"
+          href="https://www.skool.com/project-clyde-3650/about"
           target="_blank"
           rel="noopener noreferrer"
           className="h-8 flex items-center gap-1.5 px-2.5 border-2 border-border hover:border-accent-primary transition-colors rounded-[2px] text-text-secondary hover:text-accent-primary"
-          aria-label="Show Support"
+          aria-label="Support Community"
         >
           <Heart size={14} />
           <span className="text-[10px] font-semibold uppercase tracking-wider">
-            Show Support
+            Support Community
           </span>
         </a>
       </div>
