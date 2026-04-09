@@ -35,6 +35,7 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 | Feature | Description |
 |---|---|
 | **Agent Delegation** | Lead agent routes tasks to specialised sub-agents automatically |
+| **Multi-Platform Agents** | Run subagents on Claude, Gemini, OpenAI (GPT), or any OpenRouter model |
 | **Persistent Memory** | Conversations are stored with vector embeddings for semantic recall |
 | **Self-Improving Prompts** | Agents refine their own system prompts over time |
 | **Activity Feed** | Real-time visibility into what each agent is doing |
@@ -43,12 +44,18 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 | **Skills Dashboard** | Create and assign prompt extensions to agents, lazy-loaded for efficiency |
 | **Task Board (Kanban)** | Drag-and-drop board with columns, agent assignment, and document linking |
 | **File Browser** | Explore the working directory, upload files, and reference them in chat with `@` |
-| **Cost Tracking** | Per-agent cost breakdown with daily, weekly, and monthly aggregates |
-| **Schedules & Triggers** | Cron-based automation and file-watch triggers for hands-off agent runs |
+| **Inline Visualisations** | Agents render charts and custom visuals directly in chat via Chart.js |
+| **Cost Tracking** | Per-agent, per-platform cost breakdown with date range selectors and stacked charts |
+| **Schedules & Triggers** | Cron-based automation and file-watch triggers with a calendar plan view |
 | **Performance Analytics** | Track agent response times and success rates with charts |
 | **Proactive Insights** | Automated analysis that surfaces recommendations and optimisations |
-| **APIs & Webhooks** | Full CRUD integration manager — assign external APIs to agents |
+| **APIs, Webhooks & MCP** | Full CRUD integration manager — connect APIs, webhooks, and MCP servers to agents |
+| **Team Export / Import** | Export teams as `.clyde` packages and import them into other installations |
 | **Workflows** | Team-scoped, multi-stage processes stored as JSON definitions |
+| **Telegram Bot** | Chat with Clyde from Telegram with real-time streaming to the web UI |
+| **Multi-Session Chat** | Run multiple concurrent sessions with per-session streaming state |
+| **Docker Deployment** | One-command Docker Compose setup as an alternative to the CLI |
+| **OpenRouter Support** | Use any model on OpenRouter as Clyde's provider or for subagents |
 | **Global Search (Cmd+K)** | Vector similarity search across all conversations |
 | **Debug Mode** | Collapsible prompt viewer showing system prompts and agent instructions |
 | **Cost-Saving Mode** | CLI toggle to default to Sonnet/Haiku for lower-cost operation |
@@ -59,9 +66,10 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 ## Tech Stack
 
 ```
-Frontend     Next.js 16  ·  React 19  ·  Tailwind v4  ·  Zustand  ·  Motion  ·  Recharts
-Backend      FastAPI  ·  Claude Agent SDK  ·  Supabase  ·  OpenAI  ·  APScheduler
-Infra        WebSocket (real-time)  ·  Vector search (pgvector)  ·  File watchers
+Frontend     Next.js 16  ·  React 19  ·  Tailwind v4  ·  Zustand  ·  Motion  ·  Recharts  ·  Chart.js
+Backend      FastAPI  ·  Claude Agent SDK  ·  LangChain  ·  LangGraph  ·  Supabase  ·  OpenAI  ·  APScheduler
+Platforms    Anthropic  ·  OpenRouter  ·  Google Gemini  ·  OpenAI  ·  Telegram
+Infra        WebSocket (real-time)  ·  Vector search (pgvector)  ·  File watchers  ·  Docker Compose
 CLI          Node.js  ·  Interactive setup wizard  ·  Secure credential input
 ```
 
@@ -79,11 +87,14 @@ The CLI checks these automatically and will let you know if anything is missing.
 
 You'll also need accounts (all have free tiers):
 
-| Service | What it's for | Where to sign up |
-|---|---|---|
-| **Supabase** | Database | [supabase.com](https://supabase.com) |
-| **Anthropic** | AI agents | [console.anthropic.com](https://console.anthropic.com) |
-| **OpenAI** | Message search / embeddings | [platform.openai.com](https://platform.openai.com) |
+| Service | What it's for | Required? | Where to sign up |
+|---|---|---|---|
+| **Supabase** | Database & vector search | Yes | [supabase.com](https://supabase.com) |
+| **Anthropic** | AI agents (default provider) | Yes | [console.anthropic.com](https://console.anthropic.com) |
+| **OpenAI** | Embeddings + GPT subagents | Yes | [platform.openai.com](https://platform.openai.com) |
+| **OpenRouter** | Alternative provider / subagents | Optional | [openrouter.ai](https://openrouter.ai) |
+| **Google Gemini** | Gemini subagents | Optional | [aistudio.google.com](https://aistudio.google.com) |
+| **Telegram** | Chat with Clyde via Telegram | Optional | [BotFather](https://t.me/BotFather) |
 
 ---
 
@@ -311,6 +322,155 @@ Install Node.js 20+ from [nodejs.org](https://nodejs.org) (LTS).
 
 Check `.env.local` for: no extra spaces around `=`, no quotes around values, keys fully pasted. Restart with `npm run clyde` after editing.
 </details>
+
+---
+
+## Docker Deployment (Alternative)
+
+If you prefer Docker over the CLI wizard:
+
+```bash
+docker-compose up --build
+```
+
+This starts both the backend (port 8000) and frontend (port 3020) in containers. You still need a `.env.local` file — copy `.env.example` and fill in your credentials before running.
+
+The Docker setup mounts the `working/` directory and Docker socket into the backend container so agents can access files and tools.
+
+---
+
+## OpenRouter Setup (Optional)
+
+OpenRouter lets you use Clyde with any model — Claude, GPT, Gemini, Llama, DeepSeek, and more.
+
+1. Get an API key from [openrouter.ai/keys](https://openrouter.ai/keys)
+2. Add it to `.env.local`:
+   ```env
+   OPENROUTER_API_KEY=sk-or-your-key-here
+   ```
+3. Install the backend dependencies (if running manually):
+   ```bash
+   cd backend && source .venv/bin/activate && pip install -r requirements.txt
+   ```
+4. In the app, go to **Settings** and switch the **Agent Provider** to OpenRouter
+5. Choose your preferred model (e.g. `anthropic/claude-sonnet-4`, `openai/gpt-5.4`, `google/gemini-2.5-pro`)
+
+You can also assign individual subagents to OpenRouter models from the Org Chart.
+
+---
+
+## Gemini Subagents (Optional)
+
+To use Google Gemini models as subagents:
+
+1. Get an API key from [aistudio.google.com](https://aistudio.google.com)
+2. Add it to `.env.local`:
+   ```env
+   GEMINI_API_KEY=your-key-here
+   ```
+3. Install dependencies:
+   ```bash
+   cd backend && source .venv/bin/activate && pip install -r requirements.txt
+   ```
+4. Assign agents to the Gemini platform from the Org Chart
+
+---
+
+## Telegram Bot (Optional)
+
+Chat with Clyde from Telegram — messages stream to the web UI in real time.
+
+1. Create a bot via [BotFather](https://t.me/BotFather) on Telegram (`/newbot`)
+2. Copy the bot token and add it to `.env.local`:
+   ```env
+   TELEGRAM_BOT_TOKEN=your-bot-token-here
+   ```
+3. In the app, go to **Settings** > **Telegram** and toggle it on
+4. Choose **Polling** mode (default) or **Webhook** mode for VPS deployments
+5. Optionally restrict access by adding allowed Telegram user IDs
+
+Telegram sessions appear in the web UI sidebar and stream in real time.
+
+---
+
+## Upgrading from v1.1.0
+
+If you're running an existing v1.1.0 installation, follow these steps to get the latest features.
+
+### 1. Pull the latest code
+
+```bash
+git pull origin main
+```
+
+### 2. Install new frontend dependencies
+
+```bash
+cd frontend && npm install && cd ..
+```
+
+### 3. Install new backend dependencies
+
+```bash
+cd backend && source .venv/bin/activate && pip install -r requirements.txt && cd ..
+```
+
+New Python packages added since v1.1.0:
+- `google-genai` — Gemini subagent support
+- `langchain-openrouter`, `langchain-core`, `langgraph` — OpenRouter / LangChain support
+- `python-telegram-bot` — Telegram integration
+
+### 4. Run the database migration
+
+Open your Supabase dashboard, go to **SQL Editor**, and run the contents of `db/migrations/001_add_mcp_integration_type.sql`:
+
+```sql
+ALTER TABLE public.integrations
+  DROP CONSTRAINT IF EXISTS integrations_type_check;
+
+ALTER TABLE public.integrations
+  ADD CONSTRAINT integrations_type_check
+  CHECK (type IN ('api', 'webhook', 'mcp'));
+```
+
+This adds MCP server support to the integrations table. Safe to run multiple times.
+
+### 5. Add new environment variables (optional)
+
+Add any of these to your `.env.local` if you want to use the corresponding features:
+
+```env
+# OpenRouter — alternative AI provider with access to many models
+OPENROUTER_API_KEY=sk-or-your-key-here
+
+# Gemini — Google Gemini subagents
+GEMINI_API_KEY=your-key-here
+
+# Telegram — chat with Clyde from Telegram
+TELEGRAM_BOT_TOKEN=your-bot-token-here
+```
+
+### 6. Restart
+
+```bash
+npm run clyde
+```
+
+### What's New Since v1.1.0
+
+- **Multi-platform subagents** — delegate to Claude, Gemini, GPT, or any OpenRouter model
+- **OpenRouter provider** — run Clyde on any model via OpenRouter
+- **MCP server management** — connect Model Context Protocol servers to agents
+- **Telegram bot** — chat with Clyde from Telegram with real-time web UI streaming
+- **Inline visualisations** — agents render Chart.js charts and custom visuals in chat
+- **Team export / import** — export teams as `.clyde` packages, import into other installations
+- **Docker deployment** — full Docker Compose setup as an alternative to the CLI
+- **Calendar plan view** — visual calendar for schedules alongside the list view
+- **Multi-session chat** — run multiple concurrent chat sessions
+- **Date range cost tracking** — filter cost dashboard by day, week, month, year, or custom range
+- **Stacked platform charts** — cost breakdown by AI platform (Claude, Gemini, GPT, OpenRouter)
+- **Hero carousel** — new animated feature showcase on empty chat state
+- **Collapsible sidebar** — toggle navigation for more screen space
 
 ---
 
