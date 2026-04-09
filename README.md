@@ -14,10 +14,6 @@
     <img src="https://img.shields.io/badge/Website-projectclyde.app-C8FF00?style=for-the-badge&logo=googlechrome&logoColor=black" alt="Project Clyde Website" />
   </a>
   &nbsp;
-  <a href="https://www.patreon.com/cw/ProjectClyde">
-    <img src="https://img.shields.io/badge/Patreon-Support%20Project%20Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
-  </a>
-  &nbsp;
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Agent SDK" />
@@ -318,6 +314,24 @@ Check `.env.local` for: no extra spaces around `=`, no quotes around values, key
 
 ---
 
+## Join the Community
+
 <p align="center">
-  <a href="https://projectclyde.app">projectclyde.app</a> · <a href="https://www.patreon.com/cw/ProjectClyde">Patreon</a> · Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+  <img src="frontend/public/community-banner.jpg" alt="Project Clyde Community" width="100%" />
+</p>
+
+<p align="center">
+  <a href="https://www.skool.com/project-clyde-3650/about">
+    <img src="https://img.shields.io/badge/Join%20the%20Community-Skool-C8FF00?style=for-the-badge&logoColor=black" alt="Join the Community on Skool" />
+  </a>
+</p>
+
+Join the **Project Clyde Community** on Skool to connect with other users, share insights, learn how to get the most out of Clyde, and unlock special perks. Whether you're just getting started or pushing the limits of what agents can do, this is the place to be.
+
+**[Join now on Skool](https://www.skool.com/project-clyde-3650/about)**
+
+---
+
+<p align="center">
+  <a href="https://projectclyde.app">projectclyde.app</a> · <a href="https://www.skool.com/project-clyde-3650/about">Community</a> · Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
 </p>
