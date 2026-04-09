@@ -2,7 +2,7 @@
   <img src="docs/images/clyde-banner.png" alt="Project Clyde — Clyde Corp HQ" width="100%" />
 </p>
 
-<h1 align="center">Project Clyde — Early Access</h1>
+<h1 align="center">Project Clyde</h1>
 
 <p align="center">
   <strong>Your personal AI workforce, powered by the Claude Agent SDK.</strong><br/>
@@ -10,6 +10,14 @@
 </p>
 
 <p align="center">
+  <a href="https://projectclyde.app">
+    <img src="https://img.shields.io/badge/Website-projectclyde.app-C8FF00?style=for-the-badge&logo=googlechrome&logoColor=black" alt="Project Clyde Website" />
+  </a>
+  &nbsp;
+  <a href="https://www.patreon.com/cw/ProjectClyde">
+    <img src="https://img.shields.io/badge/Patreon-Support%20Project%20Clyde-ff424d?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" />
+  </a>
+  &nbsp;
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Agent SDK" />
@@ -89,8 +97,8 @@ You'll also need accounts (all have free tiers):
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/noeltg77/Project-Clyde-EA.git
-cd Project-Clyde-EA
+git clone https://github.com/noeltg77/Project-Clyde.git
+cd Project-Clyde
 ```
 
 ### 2. Run the CLI
@@ -204,7 +212,7 @@ Add your Telegram user ID to the **Allowed User IDs** field to restrict who can 
 ## Project Structure
 
 ```
-Project-Clyde-EA/
+Project-Clyde/
 ├── cli/               CLI setup wizard and app launcher
 │   └── clyde.js       Entry point for `npm run clyde`
 ├── db/                Database schema
@@ -259,7 +267,7 @@ BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000
 
 # Working directory — replace with the actual path on YOUR computer
-WORKING_DIR=/full/path/to/Project-Clyde-EA/working
+WORKING_DIR=/full/path/to/Project-Clyde/working
 ```
 
 To find your full path for `WORKING_DIR`:
@@ -361,5 +369,5 @@ Check `.env.local` for: no extra spaces around `=`, no quotes around values, key
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
+  <a href="https://projectclyde.app">projectclyde.app</a> · <a href="https://www.patreon.com/cw/ProjectClyde">Patreon</a> · Built by <a href="https://github.com/noeltg77">Make Automations</a> · Powered by <a href="https://www.anthropic.com">Anthropic</a>
 </p>
