@@ -11,6 +11,7 @@ import { PermissionStack } from "@/components/permissions/PermissionStack";
 import { InsightStack } from "@/components/insights/InsightStack";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { OnboardingOverlay } from "@/components/onboarding/OnboardingOverlay";
+import { CommunityModal } from "@/components/layout/CommunityModal";
 import { OrgChart } from "@/components/agents/OrgChart";
 import { CostDashboard } from "@/components/cost/CostDashboard";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
@@ -111,6 +112,7 @@ export function AppShell() {
       <InsightStack />
       <SearchPanel />
       <OnboardingOverlay />
+      <CommunityModal />
     </div>
   );
 }
