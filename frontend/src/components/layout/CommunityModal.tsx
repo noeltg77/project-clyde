@@ -36,23 +36,23 @@ export function CommunityModal() {
     <AnimatePresence>
       {visible && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop + centering wrapper */}
           <motion.div
-            className="fixed inset-0 bg-black/60 z-[60]"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={close}
-          />
-
-          {/* Modal */}
-          <motion.div
-            className="fixed top-1/2 left-1/2 z-[61] w-[90vw] max-w-[560px] -translate-x-1/2 -translate-y-1/2 border-2 border-border bg-bg-secondary rounded-[2px] overflow-hidden shadow-2xl"
-            initial={{ opacity: 0, scale: 0.95, x: "-50%", y: "-50%" }}
-            animate={{ opacity: 1, scale: 1, x: "-50%", y: "-50%" }}
-            exit={{ opacity: 0, scale: 0.95, x: "-50%", y: "-50%" }}
-            transition={springs.snappy}
           >
+            {/* Modal */}
+            <motion.div
+              className="w-[90vw] max-w-[560px] border-2 border-border bg-bg-secondary rounded-[2px] overflow-hidden shadow-2xl"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={springs.snappy}
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* 16:9 Image */}
             <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
               <img
@@ -92,8 +92,8 @@ export function CommunityModal() {
                 Don&apos;t show this again
               </button>
             </div>
+            </motion.div>
           </motion.div>
-        </>
       )}
     </AnimatePresence>
   );
