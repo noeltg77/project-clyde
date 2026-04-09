@@ -94,7 +94,7 @@ export function CommunityModal() {
             </div>
             </motion.div>
           </motion.div>
-      )}
+        )}
     </AnimatePresence>
   );
 }
