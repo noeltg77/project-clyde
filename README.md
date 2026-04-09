@@ -51,12 +51,11 @@ The Early Access build includes a CLI setup wizard that handles everything — c
 | **Schedules & Triggers** | Cron-based automation and file-watch triggers for hands-off agent runs |
 | **Performance Analytics** | Track agent response times and success rates with charts |
 | **Proactive Insights** | Automated analysis that surfaces recommendations and optimisations |
-| **Integrations** | APIs, Webhooks, and MCP servers — full CRUD manager with agent assignment |
+| **APIs & Webhooks** | Full CRUD integration manager — assign external APIs to agents |
 | **Workflows** | Team-scoped, multi-stage processes stored as JSON definitions |
 | **Global Search (Cmd+K)** | Vector similarity search across all conversations |
 | **Debug Mode** | Collapsible prompt viewer showing system prompts and agent instructions |
 | **Cost-Saving Mode** | CLI toggle to default to Sonnet/Haiku for lower-cost operation |
-| **Telegram Bot** | Chat with Clyde remotely from anywhere via Telegram |
 | **Brutalist UI** | Dark theme with acid-green accents — built different |
 
 ---
@@ -175,40 +174,6 @@ You can also run the services individually if you prefer separate terminals:
 
 ---
 
-## Telegram Bot (Remote Chat)
-
-Chat with Clyde from anywhere in the world via Telegram — no port forwarding or public IP required.
-
-### Setup
-
-1. **Create a bot** — Open Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the bot token
-2. **Configure in Clyde** — Open **Settings** > **Controls** > **Telegram Bot**:
-   - Paste your bot token
-   - Toggle **Enable Telegram bot** on
-3. **Start chatting** — Open your new bot in Telegram and send a message
-
-### Connection Modes
-
-| Mode | Default | How it works | Best for |
-|---|---|---|---|
-| **Polling** | Yes | Clyde periodically checks Telegram for new messages (outbound only) | Home PCs, laptops, NAT/firewall |
-| **Webhook** | No | Telegram pushes messages to a public URL you provide | VPS, cloud servers |
-
-Polling works out of the box with no network configuration. Switch to webhook mode in Settings if you're running Clyde on a server with a public URL.
-
-### Security
-
-Add your Telegram user ID to the **Allowed User IDs** field to restrict who can message your bot. Leave it empty to allow anyone. To find your user ID, message [@userinfobot](https://t.me/userinfobot) on Telegram.
-
-### How it works
-
-- Messages from Telegram are processed by the same Clyde backend that powers the web UI
-- Conversations are saved to Supabase and appear in the web UI sidebar
-- Clyde has full access to all tools and sub-agents in headless mode (no permission popups)
-- Long responses are automatically split to fit Telegram's message limit
-
----
-
 ## Project Structure
 
 ```
@@ -216,8 +181,7 @@ Project-Clyde/
 ├── cli/               CLI setup wizard and app launcher
 │   └── clyde.js       Entry point for `npm run clyde`
 ├── db/                Database schema
-│   ├── schema.sql     Idempotent SQL (safe to re-run)
-│   └── migrations/    Incremental upgrades for existing databases
+│   └── schema.sql     Idempotent SQL (safe to re-run)
 ├── frontend/          Next.js web interface (port 3020)
 ├── backend/           FastAPI server + AI agents (port 8000)
 ├── working/           Runtime data (registry, prompts, memory, workflows)
@@ -303,20 +267,6 @@ cd frontend && npm run dev
 Open **http://localhost:3020** and verify all status indicators are green in **Settings**.
 
 </details>
-
----
-
-## Migrations (Existing Users)
-
-If you're upgrading from a previous version, run any new migration files against your Supabase database. Migrations are located in `db/migrations/` and are numbered sequentially.
-
-In the Supabase dashboard, go to **SQL Editor** > **New query**, paste the migration SQL, and click **Run**.
-
-| Migration | Description |
-|---|---|
-| `001_add_mcp_integration_type.sql` | Adds MCP server support to the integrations table |
-
-> **New installs do not need to run migrations** — the full schema (`db/schema.sql`) already includes all changes.
 
 ---
 
