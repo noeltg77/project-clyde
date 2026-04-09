@@ -35,25 +35,21 @@ export function CommunityModal() {
   return (
     <AnimatePresence>
       {visible && (
-        <>
-          {/* Backdrop + centering wrapper */}
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={close}
+        >
           <motion.div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={close}
+            className="w-[90vw] max-w-[560px] border-2 border-border bg-bg-secondary rounded-[2px] overflow-hidden shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={springs.snappy}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal */}
-            <motion.div
-              className="w-[90vw] max-w-[560px] border-2 border-border bg-bg-secondary rounded-[2px] overflow-hidden shadow-2xl"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={springs.snappy}
-              onClick={(e) => e.stopPropagation()}
-            >
-            {/* 16:9 Image */}
             <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
               <img
                 src="/community-banner.jpg"
@@ -62,7 +58,6 @@ export function CommunityModal() {
               />
             </div>
 
-            {/* Content */}
             <div className="px-6 py-5 flex flex-col items-center text-center gap-4">
               <h2 className="text-lg font-semibold text-text-primary tracking-wide">
                 Join the Clyde Community
@@ -73,7 +68,6 @@ export function CommunityModal() {
                 join.
               </p>
 
-              {/* CTA Button */}
               <a
                 href={SKOOL_URL}
                 target="_blank"
@@ -84,7 +78,6 @@ export function CommunityModal() {
                 <ExternalLink size={12} />
               </a>
 
-              {/* Don't show again */}
               <button
                 onClick={dismissPermanently}
                 className="text-[11px] text-text-secondary hover:text-text-primary transition-colors cursor-pointer underline underline-offset-2"
@@ -92,9 +85,9 @@ export function CommunityModal() {
                 Don&apos;t show this again
               </button>
             </div>
-            </motion.div>
           </motion.div>
-        )}
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }
